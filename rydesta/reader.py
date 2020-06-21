@@ -3,8 +3,6 @@ import re
 from textwrap import indent
 from collections import namedtuple
 
-from .error import RyError
-
 
 Token = namedtuple('Token', 'type value')
 
