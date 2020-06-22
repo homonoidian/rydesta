@@ -1,7 +1,11 @@
-from rydesta import Reader, pretty
+import readline
 
-reader = Reader()
+from rydesta import Master
+
+master = Master('<interactive>')
+master.kernel()
+master.load_init()
+
 while True:
   line = input('>>> ')
-  reader.update(line)
-  print(pretty(reader, spaces=4))
+  print(master.feed(line))

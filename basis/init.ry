@@ -1,0 +1,37 @@
+; *** init.ry ***
+; - This file gets auto-imported into every Rydesta script.
+; - Here all of the frequently-used infixes, prefixes and
+; other features of the language are defined.
+
+; #####################
+
+type entity -> #:getattr entity "type"
+
+; #####################
+
+not (false) -> true
+not _ -> false
+
+; #####################
+
+'and (true) (true) -> true
+'and _ _ -> false
+
+'or (true) (false) -> true
+'or (false) (true) -> true
+'or _ _ -> false
+
+; #####################
+
+#:precedence 2
+
+'is left right -> {
+  if #:equals? (type left) (type right) {
+    if #:equals? (#:getattr left "value") (#:getattr right "value") {
+      ret true
+    }
+  }
+  ret false
+}
+
+'is_not left right -> not (left is right)

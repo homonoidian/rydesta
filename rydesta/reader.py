@@ -93,7 +93,7 @@ class Reader:
       self.switches[switch].update(value)
 
   def update(self, source):
-    """Reset the reader's progress and and substitute the source."""
+    """Roll back the reader's progress and substitute the source."""
     self.pos = 0
     self.line = 1
     self.token = Token('BOL', '')
@@ -174,9 +174,9 @@ class Reader:
       if self.buf in self.switches['keywords']:
         return self._mk_token(self.buf.upper())
       return self._mk_token('ID')
-    elif self._match(r'\'[a-zA-Z\-]+(?<!\-)' + f'|\'({self._symbol_regex})'):
+    elif self._match(r'\'[^\d\s\'"]+'):
       return self._mk_token('ID')
-    elif self._match(r'#:[a-zA-Z_\-]+(?<!\-)'):
+    elif self._match(r'#:[a-zA-Z_\-]+(?<!\-)\??'):
       return self._mk_token('BUILTIN')
     elif self._match(r'0x[0-9A-Fa-f]+|0o[0-7]+|0b[01]+|[0-9]*\.[0-9]+|[1-9][0-9]*|0'):
       return self._mk_token('NUM')
@@ -747,7 +747,7 @@ class Reader:
 
 
 def pretty(reader, *, spaces=2):
-  """Given a reader, pretty-print its top-level nodes up until reaching the end.
+  """Given a reader, pretty-format its top-level nodes up until reaching the end.
      Indent each new nesting with the given amount of spaces [default: 2]."""
   def _single(entity):
     buf = []
