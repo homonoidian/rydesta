@@ -41,6 +41,7 @@ class Master:
     self.define('true', RyBool(True))
     self.define('false', RyBool(False))
     # Functions:
+    self.builtin('state', lambda state: state)
     self.builtin('precedence',
       lambda _, level: self.define('*PREC*', level))
     self.builtin('getattr',

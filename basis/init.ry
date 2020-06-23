@@ -9,8 +9,8 @@ type entity -> #:getattr entity "type"
 
 ; #####################
 
-not (false) -> true
-not _ -> false
+'not (false) -> true
+'not _ -> false
 
 ; #####################
 

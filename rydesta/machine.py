@@ -271,6 +271,8 @@ def _visit_pattern(S, pattern, value):
     if not (obj := S.env.get(pattern.obj, False)):
       _die(S, f'entity "{pattern.obj}" does not exist')
     elif not isinstance(obj, RyObject):
+      # TODO: check if .value -able
+      # TODO: do exact match: x (true) -> 1 ; x "hello" ==> 1, which is wrong (should err)
       if obj.value != value.value:
         return False, f'expected {obj}, found {value}'
       return True, ''
@@ -388,9 +390,8 @@ def _visit_node(S, node):
           node.line if not node.params else node.params[0].line)
         variations = S.env.get(node.name, False)
         # Check, first of all, if the function is quoted.
-        # --> If it is, make it a parseable infix (with precedence one level
-        #     bigger than the last entry in the precedence table), or prefix
-        #     (when arity = 1).
+        # --> If it is, make it a parseable infix (with its precedence being
+        #     the value of the variable *PREC*), or prefix (when arity = 1).
         # --> Proceed with definition.
         if node.name.startswith('\''):
           name = node.name[1:]
@@ -441,18 +442,20 @@ def _visit_node(S, node):
         raise _ReturnException(_visit_node(S, node.value))
       elif node.type == 'Needs':
         from .master import Master
-        imported = [x.value for x in S.env['MODULES'].value]
-        if node.module in imported:
-          return None
         for modpath in S.env['PATH'].value.split(';'):
           path = Path(modpath) / f'{"_" if node.hidden else ""}{node.module}.ry'
           if path.exists():
+            imported = [x.value for x in S.env['MODULES'].value]
+            if str(path) in imported:
+              return None
             master = Master(path.absolute())
+            master.kernel()
+            master.load_init()
             master.feed(path.read_text())
             S.reader.merge(master.reader)
-            S.env['MODULES'].value.append(RyStr(node.module))
+            S.env['MODULES'].value.append(RyStr(str(path)))
             if node.expose:
-              for entry, value in master.env.items():
+              for entry, value in master.state.env.items():
                 # XXX is this right or wrong?
                 if entry == 'MODULES':
                   S.env[entry].value += [m for m in value.value if m.value not in imported]
@@ -488,8 +491,8 @@ def _visit_node(S, node):
           if not status:
             variations = '\n'.join(x.dump() for x in callee.variations)
             _die(S,
-              f'no variation of "{callee.name}" can handle such {len(args)} argument(s). ' \
-              f'But it can handle these:\n{indent(variations, "  ")}')
+              f'no variation of "{callee.name}" can handle such {len(args)} argument(s): ' \
+              f'{", ".join(map(repr, args))}. But these it can:\n{indent(variations, "  ")}')
           # Do not bother doing anything if the function's body is empty.
           if not variation.body:
             return None
