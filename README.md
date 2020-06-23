@@ -38,13 +38,5 @@ Rydesta posesses three weaknesses: function overloading, refle...
 
 ### Usage as for the moment
 
-Clone the repo, `cd` into it, grab a python, and `import rydesta`.
-
-```python
-  reader = rydesta.Reader()
-  reader.update('say "Hello, World!"')
-  print(rydesta.pretty(reader))
-```
-
-Do `help(Reader)` to see the top-level documentation, which is all you (and
-the interpreter) need to know about to properly interact with the reader.
+Clone the repo and `cd` into it. Type `python -m rydesta` to start the REPL, or
+append a filename to run a script.

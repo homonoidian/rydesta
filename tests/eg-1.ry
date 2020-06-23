@@ -1,0 +1,9 @@
+
+; TODO: [] matches empty vec!
+; Recursive operators seem to work?
+
+'all_are (x is []) _ -> true
+'all_are [first rest*] value -> first is value and rest all are value
+
+expect not ([1 2 3] all are 3)
+expect [3 3 3] all are 3

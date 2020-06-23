@@ -82,7 +82,7 @@ individual items. Here is the full implementation I wrote:
 It's a little verbose, but I couldn't think of it smaller. Testing?
 
 ```rydesta
-every-is (1::2) ([1]::2) (1::[2]) ([1]::[2]) [1 2]
+[(1::2) ([1]::2) (1::[2]) ([1]::[2])] all are [1 2]
 ```
 
 > Such definitions are handled under the hood, and precedence is set by default to

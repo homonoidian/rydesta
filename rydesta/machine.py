@@ -237,9 +237,9 @@ def _sign(pattern):
   elif pattern.type == 'P_Guard':
     return 2**21
   elif pattern.type == 'P_Extract':
-    return sum(map(_sign, pattern.fields), 2**18) * len(pattern.fields)
+    return sum(map(_sign, pattern.fields), 2**18) * (len(pattern.fields) + 1)
   elif pattern.type == 'P_Unpack':
-    return sum(map(_sign, pattern.members), 2**15) * len(pattern.members)
+    return sum(map(_sign, pattern.members), 2**15) * (len(pattern.members) + 1)
   elif pattern.type in ('P_Identifier', 'P_Discard'):
     return 2**12
   elif pattern.type in ('P_NamedMulti', 'P_NamedMany'):
