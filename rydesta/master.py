@@ -42,6 +42,8 @@ class Master:
     self.define('false', RyBool(False))
     # Functions:
     self.builtin('state', lambda state: state)
+    self.builtin('print',
+      lambda _, value: print(value.value if isinstance(value, RyStr) else value))
     self.builtin('precedence',
       lambda _, level: self.define('*PREC*', level))
     self.builtin('getattr',

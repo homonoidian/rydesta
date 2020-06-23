@@ -565,7 +565,7 @@ class Reader:
     return RyNode('Umbrella', line, name=name.value, covers=[obj.value for obj in objects])
 
   def _obj(self):
-    # obj ::= [SECRET] OBJ ID {ID} [block]
+    # obj ::= [SECRET] OBJ pattern+ [block]
     #   -> Object(name, ~secret, []properties, []block)
     #   / False
     line = self.line
@@ -577,10 +577,10 @@ class Reader:
       self._expected('object name', line)
     properties = []
     while True:
-      property_ = self._consume('ID')
+      property_ = self._pattern()
       if property_ is False:
         break
-      properties.append(property_.value)
+      properties.append(property_)
     return RyNode('Object', line,
       name = name.value,
       secret = secret is not False,

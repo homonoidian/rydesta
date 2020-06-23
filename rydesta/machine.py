@@ -125,20 +125,21 @@ class RyObject(HasType):
     self.state = state
 
   def __repr__(self):
-    return f'[object {self.name} ({" ".join(self.props)})]'
+    return f'[object {self.name}]'
 
 
 class RyRouteable(HasType):
   """Anything that can be dottted (e.g., `a.b.c`) is routeable; in the "e.g.",
      both `a` and `b` are routeables."""
 
-  __slots__ = 'name', 'env'
+  __slots__ = 'name', 'env', 'extractable'
 
   type = 'routeable'
 
-  def __init__(self, name, env):
+  def __init__(self, name, env, *, extractable=[]):
     self.name = name
     self.env = env
+    self.extractable = extractable or [*self.env.keys()]
 
   def __repr__(self):
     return f'[routeable "{self.name}"]'
@@ -236,7 +237,7 @@ def _sign(pattern):
   elif pattern.type == 'P_Guard':
     return 2**21
   elif pattern.type == 'P_Extract':
-    return 2**18
+    return sum(map(_sign, pattern.fields), 2**18) * len(pattern.fields)
   elif pattern.type == 'P_Unpack':
     return sum(map(_sign, pattern.members), 2**15) * len(pattern.members)
   elif pattern.type in ('P_Identifier', 'P_Discard'):
@@ -280,9 +281,8 @@ def _visit_pattern(S, pattern, value):
       return False, f'type {value.type} is not an object'
     elif obj.name != value.name:
       return False, f'bogus object: expected "{obj.name}", got "{value.name}"'
-    for prop, field in zip(obj.props, pattern.fields):
-      # Instance guarantees that all properties have a value.
-      status, payload = _visit_pattern(S, field, value.env.get(prop))
+    for extractable, field in zip(value.extractable, pattern.fields):
+      status, payload = _visit_pattern(S, field, extractable)
       if not status:
         return False, \
           f'extraction for "{obj.name}" failed on field for "{prop}": {payload}'
@@ -516,10 +516,17 @@ def _visit_node(S, node):
         if len(args) != len(obj.props):
           _die(S, f'"{obj.name}" expected {len(obj.props)} properties, got {len(args)}')
         capsule = obj.state.copy()
-        for prop, arg in zip(obj.props, args):
-          capsule.env[prop] = arg
+        # With patterns there is no clear list of parameters an object takes,
+        # and .env loses order which we depend on). The only work-around for
+        # extraction I could think of is with `extractable`:
+        extractable = []
+        for idx, (prop, arg) in enumerate(zip(obj.props, args)):
+          status, payload = _visit_pattern(capsule, prop, arg)
+          if not status:
+            _die(S, f'failed to instantiate {obj} on argument no. {idx + 1}: {payload}')
+          extractable.append(arg)
         _visit_node(capsule, obj.block)
-        return RyRouteable(obj.name, capsule.env)
+        return RyRouteable(obj.name, capsule.env, extractable=extractable)
       elif node.type == 'Builtin':
         return RyBuiltin(
           S.env.get(f'#:{node.name}', False) or _die(S, f'builtin "{node.name}" not found'))
@@ -535,6 +542,12 @@ def _visit_node(S, node):
             res = res.env.get(piece) or _die(S, f'no property "{piece}" for {res}')
           return res
         return parent
+      elif node.type == 'Expect':
+        # Evaluate the guard; if it's not false, proceed. If it is, die.
+        guard = _visit_node(S, node.guard)
+        if isinstance(guard, RyBool) and guard.value == False:
+          _die(S, f'expectation false')
+        return None
       elif node.type == 'Vector':
         return RyVec(_visit_node(S, node.items))
       elif node.type == 'Number':
