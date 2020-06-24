@@ -617,14 +617,7 @@ def visit(state):
   try:
     last = None
     while node := state.reader.next():
-      # Since we don't have any queue and can issue just one node at a time,
-      # manual tuple unpacking when multiple nodes have to be issued
-      # simultaneously is required.
-      if type(node) is tuple:
-        for item in node:
-          last = _visit_node(state, item)
-      else:
-        last = _visit_node(state, node)
+      last = _visit_node(state, node)
     return last
   except ReaderError as error:
     raise RyError(error.reason,
