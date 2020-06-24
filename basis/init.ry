@@ -1,37 +1,72 @@
 ; *** init.ry ***
-; - This file gets auto-imported into every Rydesta script.
-; - Here all of the frequently-used infixes, prefixes and
-; other features of the language are defined.
+; - This file gets auto-imported into every Rydesta script. Here, all out-of-the-box
+; features are defined.
+; - Beware of the "order" of infix and prefix definitions: some infixes/prefixes
+; are closer to the builtins than others; also, we're closures, so if we depend
+; on a function, it must exist beforehand.
+; === ALEXEY YURCHENKO, 2020
 
-; #####################
-
-type entity -> #:getattr entity "type"
-
-; #####################
+; --- Identity unary ----------------------------
 
 'not (false) -> true
 'not _ -> false
 
-; #####################
+; --- Precedences -------------------------------
 
-'and (true) (true) -> true
-'and _ _ -> false
+PRECEDENCE_TERNARY = 1
+PRECEDENCE_JUNCTION = 2
+PRECEDENCE_IDENTITY = 3
 
-'or (true) (false) -> true
-'or (false) (true) -> true
-'or _ _ -> false
+; --- Ternary when-else -------------------------
 
-; #####################
+#:precedence PRECEDENCE_TERNARY
 
-#:precedence 2
-
-'is left right -> {
-  if #:equals? (type left) (type right) {
-    if #:equals? (#:getattr left "value") (#:getattr right "value") {
-      ret true
-    }
+quoting 'when conseq cond -> {
+  case unquote cond {
+    false => false
+    _ -> unquote conseq
   }
-  ret false
 }
 
+quoting 'else cond conseq -> {
+  val = unquote cond
+  if not val {
+    unquote conseq
+  } else {
+    val
+  }
+}
+
+; --- Identity ----------------------------------
+
+#:precedence PRECEDENCE_IDENTITY
+
+'is _ _ -> false
+'is left (left) -> true
 'is_not left right -> not (left is right)
+
+; TODO: in, of?
+
+; --- Junctions ---------------------------------
+
+#:precedence PRECEDENCE_JUNCTION
+
+for left right {
+  quoting 'and -> {
+    value = unquote left
+    case unquote left {
+      false => value
+      _ -> unquote right
+    }
+  }
+  quoting 'or -> {
+    value = unquote left
+    case value {
+      false => unquote right
+      _ -> value
+    }
+  }
+}
+
+; Leave precedence on identity's level.
+#:precedence PRECEDENCE_IDENTITY

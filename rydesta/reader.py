@@ -70,7 +70,8 @@ class Reader:
       'keywords': {
         'for', 'expect', 'ret', 'if', 'else', 'case',
         'division', 'needs', 'hidden', 'exposed',
-        'new', 'obj', 'secret', 'umbrella'
+        'new', 'obj', 'secret', 'umbrella',
+        'quoting', 'naked'
       },
       'precedence': {}
     }
@@ -310,6 +311,7 @@ class Reader:
     #   | value "!" -> Call(callee, [])
     #   | value
     line = self.line
+
     if self.token.type not in ('ID', 'NEW', 'BUILTIN', '('):
       return self._value()
     new = self._consume('NEW')
@@ -499,10 +501,12 @@ class Reader:
     return RyNode('Assign', line, pattern=pattern, value=value)
 
   def _function(self):
-    # function ::= ID {pattern} "->" (infix | block)
-    #   -> Function(name, []params, []body)
+    # function ::= (QUOTING | NAKED)? ID {pattern} "->" (infix | block)
+    #   -> Function(name, ~quoting, ~naked, []params, []body)
     #   / False
     line = self.line
+    quoting = self._consume('QUOTING')
+    naked = self._consume('NAKED')
     name = self._consume('ID')
     if name is False:
       return False
@@ -515,6 +519,8 @@ class Reader:
     return RyNode('Function', line,
       name = name.value,
       params = params,
+      naked = naked is not False,
+      quoting = quoting is not False,
       body = body if type(body) is list else [body])
 
   def _for(self):

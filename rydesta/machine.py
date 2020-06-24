@@ -55,12 +55,14 @@ class RyTypeType(HasType, _Box):
 class RyVariations(HasType):
   """A list of functions with a common name."""
 
-  __slots__ = 'name', 'variations'
+  __slots__ = 'name', 'variations', 'quoting', 'naked'
 
   type = 'variations'
 
-  def __init__(self, name, initial):
+  def __init__(self, name, initial, quoting=False, naked=False):
     self.name = name
+    self.naked = naked
+    self.quoting = quoting
     self.variations = [initial]
 
   def add(self, variation):
@@ -105,7 +107,9 @@ class RyFunction(HasType):
     excerpt = dedent(self._help_rmprefix(excerpt, 'for'))
     excerpt = self._help_rmsuffix(excerpt, '{')
     params = excerpt.split('->')[0].strip()
-    return f'{name} {params}' if not params.startswith(self.name) else params
+    if self.name == params: # zero-arity
+      return self.name
+    return f'{self.name}: {params} -> ...'
 
   def __repr__(self):
     return f'[{self.dump()}]'
@@ -143,6 +147,18 @@ class RyRouteable(HasType):
 
   def __repr__(self):
     return f'[routeable "{self.name}"]'
+
+
+class RyExcerpt(HasType):
+  type = 'excerpt'
+
+  def __init__(self, state, node):
+    # Excerpts are somewhat-ly closures, too.
+    self.state = state.copy()
+    self.node = node
+
+  def __repr__(self):
+    return f'[excerpt {self.node}]'
 
 
 class RyBuiltin(HasType, _Box):
@@ -273,9 +289,12 @@ def _visit_pattern(S, pattern, value):
       _die(S, f'entity "{pattern.obj}" does not exist')
     elif not isinstance(obj, RyObject):
       if isinstance(obj, _Box) and isinstance(value, _Box):
-        # XXX only RyBools require match via `is`, I guess.
         lval, rval = obj.value, value.value
-        if lval is rval if isinstance(obj, RyBool) else lval == rval:
+        # XXX only RyBools require need with `is`, I guess.
+        if isinstance(obj, RyBool) or isinstance(value, RyBool):
+          if lval is rval:
+            return True, ''
+        elif lval == rval:
           return True, ''
       return False, f'expected {obj}, found {value}'
     if not isinstance(value, RyRouteable):
@@ -361,7 +380,10 @@ def _visit_node(S, node):
       S.line = node.line
       if node.type == 'Cases':
         head = _visit_node(S, node.head)
-        cases = sorted(node.cases, key=lambda x: _sign(x.cond), reverse=True)
+        cases = sorted(node.cases,
+          # ValueCases have priority over MatchCases.
+          key=lambda x: 2**32 if x.type == 'ValueCase' else _sign(x.cond),
+          reverse=True)
         for case in cases:
           if case.type == 'MatchCase':
             # In cases, P_Discard has the highest priority.
@@ -407,12 +429,18 @@ def _visit_node(S, node):
             S.reader.add_prefix(name.upper())
         # If the function exists, make this one one of its variations.
         if isinstance(variations, RyVariations):
+          if variations.quoting != node.quoting:
+            _die(S, f'expected variation `{function}` to be quoting')
+          elif variations.naked != node.naked:
+            _die(S, f'expected variation `{function}` to be naked')
           variations.add(function)
         else:
-          S.env[node.name] = RyVariations(node.name, function)
-        # We have to delay the actual state definition to achieve recursion
-        # and be a closure at the same time.
-        function.state = function.state.copy()
+          S.env[node.name] = RyVariations(node.name, function,
+            quoting = node.quoting,
+            naked = node.naked)
+        if not node.naked:
+          # Make it a closure but with recursion available.
+          function.state = function.state.copy()
         return None
       elif node.type == 'If':
         cond = _visit_node(S, node.cond)
@@ -469,8 +497,22 @@ def _visit_node(S, node):
         status, payload = _visit_pattern(S, node.pattern, value)
         return _die(S, f'match error: {payload}') if not status else value
       elif node.type == 'Call':
-        callee, args = _visit_node(S, [node.callee, node.args])
+        if node.callee.type == 'Request':
+          # A bunch of special-form calls (somewhat like LISP's):
+          def arity_is(arity):
+            if len(node.args) != arity:
+              _die(S, f'special-form "{node.callee.name}" receives exactly one argument')
+            return True
+          if node.callee.name == 'unquote' and arity_is(1):
+            quoted = _visit_node(S, node.args[0])
+            if not isinstance(quoted, RyExcerpt):
+              _die(S, f'cannot unquote a non-excerpt value: {quoted}')
+            return _visit_node(quoted.state.copy(), quoted.node)
+          elif node.callee.name == 'quote' and arity_is(1):
+            return RyExcerpt(S, node.args[0])
+        callee = _visit_node(S, node.callee)
         if isinstance(callee, RyVariations):
+          args = [(RyExcerpt if callee.quoting else _visit_node)(S, arg) for arg in node.args]
           for idx, variation in enumerate(callee.variations):
             if variation.arity == len(args):
               capsule = variation.state.copy()
@@ -489,7 +531,7 @@ def _visit_node(S, node):
             variations = '\n'.join(x.dump() for x in callee.variations)
             _die(S,
               f'no variation of "{callee.name}" can handle such {len(args)} argument(s): ' \
-              f'{", ".join(map(repr, args))}. But these it can:\n{indent(variations, "  ")}')
+              f'{", ".join(map(repr, args))}. Maybe you want one of these:\n{indent(variations, "  ")}')
           # Do not bother doing anything if the function's body is empty.
           if not variation.body:
             return None
@@ -503,7 +545,7 @@ def _visit_node(S, node):
           node = last.value if last.type == 'Ret' else last
           # TCO: continue looping...
         elif isinstance(callee, RyBuiltin):
-          return callee.value(S, *args)
+          return callee.value(S, *_visit_node(S, node.args))
         else:
           _die(S, f'callee of type {callee.type} is not callable: {callee}')
       elif node.type == 'Instance':
