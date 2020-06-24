@@ -267,6 +267,23 @@ def _sign(pattern):
 
 
 ###- INTERPRETER -##############
+### Equality ####################
+
+def _equals(left, right):
+  if isinstance(left, _Box) and isinstance(right, _Box):
+    lval, rval = left.value, right.value
+    # XXX only RyBools require need with `is`, I guess.
+    if isinstance(left, RyBool) or isinstance(right, RyBool):
+      if lval is rval:
+        return True
+    elif isinstance(left, RyVec) and isinstance(right, RyVec):
+      if len(lval) == len(rval):
+        return all(_equals(litem, ritem) for litem, ritem in zip(lval, rval))
+      return False
+    elif lval == rval:
+      return True
+  return False
+
 ### Pattern Engine ##############
 
 def _visit_pattern(S, pattern, value):
@@ -288,15 +305,9 @@ def _visit_pattern(S, pattern, value):
     if not (obj := S.env.get(pattern.obj, False)):
       _die(S, f'entity "{pattern.obj}" does not exist')
     elif not isinstance(obj, RyObject):
-      if isinstance(obj, _Box) and isinstance(value, _Box):
-        lval, rval = obj.value, value.value
-        # XXX only RyBools require need with `is`, I guess.
-        if isinstance(obj, RyBool) or isinstance(value, RyBool):
-          if lval is rval:
-            return True, ''
-        elif lval == rval:
-          return True, ''
-      return False, f'expected {obj}, found {value}'
+      if not _equals(obj, value):
+        return False, f'expected {obj}, found {value}'
+      return True, ''
     if not isinstance(value, RyRouteable):
       return False, f'type {value.type} is not an object'
     elif obj.name != value.name:
@@ -392,7 +403,7 @@ def _visit_node(S, node):
             else:
               status, _ = _visit_pattern(S, case.cond, head)
           elif case.type == 'ValueCase':
-            status = _visit_node(S, case.cond).value == head.value
+            status = _equals(_visit_node(S, case.cond), head)
           if status:
             if not case.body:
               # If the case body is empty, return true.
@@ -409,24 +420,10 @@ def _visit_node(S, node):
           node.name, node.params, node.body,
           node.line if not node.params else node.params[0].line)
         variations = S.env.get(node.name, False)
-        # Check, first of all, if the function is quoted.
-        # --> If it is, make it a parseable infix (with its precedence being
-        #     the value of the variable *PREC*), or prefix (when arity = 1).
-        # --> Proceed with definition.
-        if node.name.startswith('\''):
-          name = node.name[1:]
-          if function.arity not in (1, 2):
-            _die(S,
-              'expected either a prefix (arity = 1) or infix (arity = 2), ' \
-              f'got arity = {function.arity}')
-          if '_' in name:
-            S.reader.add_token(name.upper(), r'[ \t]+'.join(name.split('_')))
-          elif name[0].isalpha():
-            S.reader.add_keyword(name)
-          if function.arity == 2:
-            S.reader.add_operator(name.upper(), 'left', int(S.env['*PREC*'].value))
-          elif function.arity == 1:
-            S.reader.add_prefix(name.upper())
+        if node.name.startswith('\'') and function.arity not in (1, 2):
+          _die(S,
+            'expected either a prefix (arity = 1) or infix (arity = 2), ' \
+            f'got arity = {function.arity}')
         # If the function exists, make this one one of its variations.
         if isinstance(variations, RyVariations):
           if variations.quoting != node.quoting:
@@ -435,13 +432,14 @@ def _visit_node(S, node):
             _die(S, f'expected variation `{function}` to be naked')
           variations.add(function)
         else:
-          S.env[node.name] = RyVariations(node.name, function,
+          S.env[node.name] = variations = RyVariations(
+            node.name, function,
             quoting = node.quoting,
             naked = node.naked)
         if not node.naked:
           # Make it a closure but with recursion available.
           function.state = function.state.copy()
-        return None
+        return variations
       elif node.type == 'If':
         cond = _visit_node(S, node.cond)
         if not (isinstance(cond, RyBool) and cond.value is False):
@@ -466,6 +464,8 @@ def _visit_node(S, node):
         return None
       elif node.type == 'Ret':
         raise _ReturnException(_visit_node(S, node.value))
+      elif node.type == 'ForBlock':
+        return _visit_node(S, node.functions)[-1]
       elif node.type == 'Needs':
         from .master import Master
         for modpath in S.env['PATH'].value.split(';'):
@@ -625,7 +625,6 @@ def visit(state):
           last = _visit_node(state, item)
       else:
         last = _visit_node(state, node)
-      state.reader.update_symbol_regex()
     return last
   except ReaderError as error:
     raise RyError(error.reason,

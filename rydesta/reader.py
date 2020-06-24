@@ -68,13 +68,13 @@ class Reader:
       },
       'prefixes': set(),
       'keywords': {
-        'for', 'expect', 'ret', 'if', 'else', 'case',
-        'division', 'needs', 'hidden', 'exposed',
-        'new', 'obj', 'secret', 'umbrella',
+        'for', 'expect', 'ret', 'if', 'else', 'case', 'needs',
+        'hidden', 'exposed', 'new', 'obj', 'secret', 'umbrella',
         'quoting', 'naked'
       },
       'precedence': {}
     }
+    self.precedence = 1 # precedence level is global
     self.update_symbol_regex()
 
   ### Public utility. ##############
@@ -99,6 +99,8 @@ class Reader:
     self.line = 1
     self.token = Token('BOL', '')
     self.source = source + '\n\x00'
+    # XXX bad?
+    self._for_argc = []
 
   def add_prefix(self, prefix):
     """Add a new prefix type. Assume it is in uppercase."""
@@ -502,7 +504,7 @@ class Reader:
 
   def _function(self):
     # function ::= (QUOTING | NAKED)? ID {pattern} "->" (infix | block)
-    #   -> Function(name, ~quoting, ~naked, []params, []body)
+    #   -> Function(name, ~quoting, ~naked, []params, iter body)
     #   / False
     line = self.line
     quoting = self._consume('QUOTING')
@@ -513,7 +515,19 @@ class Reader:
     params = self._kleene_until('->', self._pattern)
     if params is False:
       return False
-    body = self._any_of(self._block, self._infix)
+    if name.value.startswith('\''):
+      arity = self._for_argc[-1] if self._for_argc else len(params)
+      value = name.value[1:]
+      if '_' in value:
+        self.add_token(value.upper(), r'[ \t]+'.join(value.split('_')))
+      elif value[0].isalpha():
+        self.add_keyword(value)
+      if arity == 2:
+        self.add_operator(value.upper(), 'left', self.precedence)
+      elif arity == 1:
+        self.add_prefix(value.upper())
+      self.update_symbol_regex()
+    body = self._term() if self._consume('NL') else self._any_of(self._block, self._infix)
     if body is False:
       self._expected('function body', line, got=False)
     return RyNode('Function', line,
@@ -521,7 +535,7 @@ class Reader:
       params = params,
       naked = naked is not False,
       quoting = quoting is not False,
-      body = body if type(body) is list else [body])
+      body = [body] if type(body) is not list else body)
 
   def _for(self):
     # for ::= FOR {pattern} "{" functions:function+ "}" -> ...functions
@@ -532,12 +546,9 @@ class Reader:
             add -> a + b
             sub -> a - b
           }
-    Expands to:
+    "Expands" to:
       >>> add (num a) (num b) -> a + b
       >>> sub (num a) (num b) -> a - b
-    Since there is no clear mechanism for yielding multiple nodes at the same time,
-    we postpone this problem to figure itself out. A middle-ground, now, is to
-    return a tuple.
     """
     line = self.line
     if self._consume('FOR') is False:
@@ -545,11 +556,13 @@ class Reader:
     params = self._kleene_until('{', self._pattern)
     if params is False:
       self._expected('a common parameter pattern or "{"', line)
+    self._for_argc.append(len(params))
     functions = self._kleene_until('}', self._function, sep='NL', allow_nl=True) \
       or self._expected('at least one function in the block', line, got=False)
+    self._for_argc.pop()
     for function in functions:
       function.set('params', params + function.params)
-    return tuple(functions)
+    return RyNode('ForBlock', line, functions=functions)
 
   def _umbrella(self):
     # umbrella ::= UMBRELLA ID FOR ID+ -> Umbrella(name, []covers)
@@ -698,24 +711,8 @@ class Reader:
         self._expected('a block')
     return RyNode('If', line, cond=cond, correct=correct, other=other)
 
-  def _division(self):
-    # division ::= [ID] "division" body:block -> ...body
-    #   / False
-    #- Here we meet the same problem we met in `for`: returning multiple nodes
-    #  simultaneously and being transparent to the parents of ours, at the same time.
-    #- This is impossible, so we again return a tuple of nodes.
-    line = self.line
-    _ = self._consume('ID') # ignore
-    if self._consume('DIVISION') is False:
-      return False
-    body = self._block()
-    if body is False:
-      self._expected('division body', line)
-    return tuple(body)
-
   def _term(self):
     return self._any_of(
-      self._division,
       self._if,
       self._cases,
       self._expect,
@@ -730,7 +727,6 @@ class Reader:
 
   def next(self, stopper='EOF'):
     """Proceed to read the next top-level node. Return False if reached the end."""
-    # XXX queue of nodes instead of returning tuples?
     if self.token.type == 'BOL':
       self.token = self._progress()
     if self.token.type == stopper:

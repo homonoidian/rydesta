@@ -46,7 +46,7 @@ class Master:
     self.builtin('print',
       lambda _, value: print(value.value if isinstance(value, RyStr) else value))
     self.builtin('precedence',
-      lambda _, level: self.define('*PREC*', level))
+      lambda _, level: setattr(self.state.reader, 'precedence', int(level.value)))
     self.builtin('getattr',
       lambda _, obj, attr, default=None: getattr(obj, attr.value, default))
     self.builtin('equals?',
