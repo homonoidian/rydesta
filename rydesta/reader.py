@@ -446,8 +446,9 @@ class Reader:
       return False
     if token.type == '[':
       members = self._kleene_until(']', lambda: self._any_of(self._pattern_multi, self._pattern))
-      if not members: # XXX [] matches empty vector?
-        return False
+      if not members:
+        # XXX: too manual?
+        return RyNode('P_Compare', line, value=RyNode('Vector', line, items=[]))
       return RyNode('P_Unpack', line, members=members)
     elif token.type == '(':
       inside = self._any_of(self._pattern_guard, self._pattern_extract)
