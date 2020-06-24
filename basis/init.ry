@@ -21,12 +21,11 @@ PRECEDENCE_IDENTITY = 3
 
 #:precedence PRECEDENCE_TERNARY
 
-quoting 'when conseq cond -> {
+quoting 'when conseq cond ->
   case unquote cond {
     false => false
     _ -> unquote conseq
   }
-}
 
 quoting 'else cond conseq -> {
   val = unquote cond

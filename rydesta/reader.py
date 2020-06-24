@@ -516,7 +516,7 @@ class Reader:
     if params is False:
       return False
     if name.value.startswith('\''):
-      arity = self._for_argc[-1] if self._for_argc else len(params)
+      arity = self._for_argc[-1] + len(params) if self._for_argc else len(params)
       value = name.value[1:]
       if '_' in value:
         self.add_token(value.upper(), r'[ \t]+'.join(value.split('_')))

@@ -37,7 +37,6 @@ class Master:
     # Values:
     self.define('PATH', RyStr(f'.;{self.basis}'))
     self.define('MODULES', RyVec([]))
-    self.define('*PREC*', RyNum(1))
     self.define('true', RyBool(True))
     self.define('false', RyBool(False))
     # Functions:
