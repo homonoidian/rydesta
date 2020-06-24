@@ -174,7 +174,7 @@ class Reader:
       if self.buf in self.switches['keywords']:
         return self._mk_token(self.buf.upper())
       return self._mk_token('ID')
-    elif self._match(r'\'[^\d\s\'"]+'):
+    elif self._match(r'\'[^\d\s\'"\.\])}=,]+'):
       return self._mk_token('ID')
     elif self._match(r'#:[a-zA-Z_\-]+(?<!\-)\??'):
       return self._mk_token('BUILTIN')
@@ -265,7 +265,8 @@ class Reader:
   #| Expressions & values:
 
   def _value(self):
-    # value ::= ID {"." ID} -> Path(parent, [str]path)
+    # value ::= value {"." ID} -> Path(parent, [str]path)
+    #   | ID -> Request(name)
     #   | BUILTIN -> Builtin(name)
     #   | STR -> String(value)
     #   | NUM -> Number(value)
@@ -277,31 +278,31 @@ class Reader:
     if token is False:
       return False
     if token.type == 'ID':
-      path = []
-      while self._consume('.'):
-        part = self._consume('ID')
-        if part is False:
-          self._expected('an identifier', line)
-        path.append(part.value)
-      return RyNode('Path', line, parent=token.value, path=path)
+      node = RyNode('Request', line, name=token.value)
     elif token.type == 'BUILTIN':
-      return RyNode('Builtin', line, name=token.value[2:]) # cut the "#:" part
+      node = RyNode('Builtin', line, name=token.value[2:]) # cut the "#:" part
     elif token.type == 'STR':
-      return RyNode('String', line, value=token.value[1:-1]) # cut the quotes
+      node = RyNode('String', line, value=token.value[1:-1]) # cut the quotes
     elif token.type == 'NUM':
-      return RyNode('Number', line, value=token.value)
+      node = RyNode('Number', line, value=token.value)
     elif token.type == '[':
       items = self._kleene_until(']', self._value, allow_nl=True)
       if items is False:
         self._expected(f'a vector item or "]" when reading a vector', line)
-      return RyNode('Vector', line, items=items)
+      node = RyNode('Vector', line, items=items)
     elif token.type == '(':
-      inside = self._infix()
-      if inside is False:
+      node = self._infix()
+      if node is False:
         self._expected('an expression', line)
       if self._consume(')') is False:
         self._expected('")"', line)
-      return inside
+    path = []
+    while self._consume('.'):
+      part = self._consume('ID')
+      if part is False:
+        self._expected('an identifier', line)
+      path.append(part.value)
+    return node if not path else RyNode('Path', line, parent=node, path=path)
 
   def _call(self):
     # call ::= (ID | BUILTIN | "(") {value} -> Call(callee, []args)
@@ -341,9 +342,7 @@ class Reader:
         self._expected(f'a value to follow prefix "{operator.value}"', line)
       # NOTE: prefixes are function calls after parsing!
       return RyNode('Call', line,
-        callee = RyNode('Path', line,
-          parent = f'\'{operator.value.lower()}',
-          path = []),
+        callee = RyNode('Request', line, name=f'\'{operator.value.lower()}'),
         args = [operand])
     return self._call()
 
@@ -365,9 +364,7 @@ class Reader:
         self._expected('right hand side of an expression', line)
       # NOTE: infixes are function calls after parsing, too!
       left = RyNode('Call', line,
-        callee = RyNode('Path', line,
-          parent = f'\'{infix.lower()}',
-          path = []),
+        callee = RyNode('Request', line, name=f'\'{infix.lower()}'),
         args = [left, right])
     return left
 
@@ -390,14 +387,14 @@ class Reader:
     #- Nuclear guards, e.g., "(x in [1 2 3])", or "(x not of num)"
     infix = self._consume(*[x for x, p in self.switches['precedence'].items() if p[1] == 2])
     if infix is not False:
+      value = self._value()
+      if value is False:
+        self._expected('a value', line)
       return RyNode('P_Guard', line,
         param = param.value,
         guard = RyNode('Call', line,
-          callee = RyNode('Path', line,
-            parent = f'\'{infix.type.lower()}',
-            path = []),
-          args = [RyNode('Path', line, parent=param.value, path=[]),
-                  self._value() or self._expected('a value', line)]))
+          callee = RyNode('Request', line, name=f'\'{infix.type.lower()}'),
+          args = [RyNode('Request', line, name=param.value), value]))
     return False
 
   def _pattern_extract(self):

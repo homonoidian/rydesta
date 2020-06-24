@@ -272,11 +272,12 @@ def _visit_pattern(S, pattern, value):
     if not (obj := S.env.get(pattern.obj, False)):
       _die(S, f'entity "{pattern.obj}" does not exist')
     elif not isinstance(obj, RyObject):
-      # TODO: check if .value -able
-      # TODO: do exact match: x (true) -> 1 ; x "hello" ==> 1, which is wrong (should err)
-      if obj.value != value.value:
-        return False, f'expected {obj}, found {value}'
-      return True, ''
+      if isinstance(obj, _Box) and isinstance(value, _Box):
+        # XXX only RyBools require match via `is`, I guess.
+        lval, rval = obj.value, value.value
+        if lval is rval if isinstance(obj, RyBool) else lval == rval:
+          return True, ''
+      return False, f'expected {obj}, found {value}'
     if not isinstance(value, RyRouteable):
       return False, f'type {value.type} is not an object'
     elif obj.name != value.name:
@@ -284,61 +285,58 @@ def _visit_pattern(S, pattern, value):
     for extractable, field in zip(value.extractable, pattern.fields):
       status, payload = _visit_pattern(S, field, extractable)
       if not status:
-        return False, \
-          f'extraction for "{obj.name}" failed on field for "{prop}": {payload}'
+        return False, f'extraction for "{obj.name}" failed on field for "{prop}": {payload}'
   elif pattern.type == 'P_Unpack':
-    # TODO handle strings differently!
     if not isinstance(value, (RyVec, RyStr)):
-      return False, f'right-hand side is not a vector: {value}'
-    elif isinstance(value, RyStr):
-      value = RyVec([RyStr(c) for c in value.value])
-    just_multis = len(_just_of(pattern.members, 'P_DiscardMulti', 'P_NamedMulti'))
-    just_manys = len(_just_of(pattern.members, 'P_DiscardMany', 'P_NamedMany'))
-    if len(pattern.members) != len(value.value) and not (just_multis or just_manys):
-      return False, f'pattern is of wrong size to cover the vector given: {value}'
-    # XXX does this 'formula' really work?
-    if just_multis + just_manys > 2 and (just_multis + just_manys) * 1.5 > len(pattern.members):
-      _die(S, 'multiple grouping patterns without a delimiter')
+      return False, f'right-hand side must be a vector or a string, got {value}'
+    # If the value is string, return substrings. If vector, return sub-vectors.
+    is_str = isinstance(value, RyStr)
+    myself = 'string' if is_str else 'vector'
+    multis = len(_just_of(pattern.members, 'P_DiscardMulti', 'P_NamedMulti'))
+    manys = len(_just_of(pattern.members, 'P_DiscardMany', 'P_NamedMany'))
+    if len(pattern.members) != len(value.value) and not (multis or manys):
+      return False, f'got pattern of length {len(pattern.members)}, but {myself} ' \
+                    f'is of length {len(value.value)}: {value}'
+    # TODO: does this 'formula' really work? it seems it doesnt!
+    if multis + manys > 2 and (multis + manys) * 1.5 > len(pattern.members):
+      _die(S, 'several multi-item captures must be delimited')
     v_off, m_off = 0, 0
     while members := pattern.members[m_off:]:
       member = pattern.members[m_off]
       values = value.value[v_off:]
-      # Assume we'll cover everything up to the vector's end.
-      covered = len(values) - len(members[1:])
+      named, multi = 'Named' in member.type, 'Multi' in member.type
+      name = member.name if named else f'<{"plus" if multi else "star"}>'
+      # Assume we'll capture everything up to the vector's end.
+      captured = len(values) - len(members[1:])
       if member.type.startswith(('P_DiscardM', 'P_NamedM')):
-        named, multi = 'Named' in member.type, 'Multi' in member.type
-        name = member.name if named else f'<{"plus" if multi else "star"}>'
-        # Detect a separator (that has to directly follow the grouping).
-        # Valid separators are patterns that have definite outcome: comparison,
+        # Detect a separator (which has to directly follow the grouping).
+        # Valid separators are patterns that capture exactly one value: comparison,
         # object extraction, or a guarding expression.
         if len(members) > 1 and members[1].type in ('P_Compare', 'P_Guard', 'P_Extract'):
           # Iterate over the values left until we meet the specified separator.
           for index, item in enumerate(values):
-            status, _ = _visit_pattern(S, members[1], item)
+            status, _ = _visit_pattern(S, members[1], RyStr(item) if is_str else item)
             if status is True:
-              covered = index
+              captured = index
               # For v_off, we jump over the delimiter ('consuming' it).
               # For m_off, we jump over the pattern of the delimiter.
               v_off += 1
               m_off += 1
               break
             elif index == len(values) - 1:
-              return False, \
-                f'got to the end of the vector searching for "{name}"\'s delimiter: {value}'
-        if not covered and multi:
-          return False, \
-            f'multi "{name}" required at least one item to match, found none: {value}'
+              return False, f'reached the end of the {myself} searching for the delimiter of "{name}": {value}'
+        if not captured and multi:
+          return False, f'"{name}" required at least one item to match, got none: {value}'
         if named:
-          S.env[member.name] = RyVec(values[:covered])
-        v_off += covered
-      elif covered < 0:
-        return False, f'vector too small to be covered'
+          S.env[member.name] = (RyStr if is_str else RyVec)(values[:captured])
+        v_off += captured
+      elif captured < 0:
+        return False, f'the given {myself} is too small to be captured by {name}'
       else: # if it's not DiscardM... or NamedM...
         item = value.value[v_off]
-        status, payload = _visit_pattern(S, member, item)
+        status, payload = _visit_pattern(S, member, RyStr(item) if is_str else item)
         if not status:
-          return False, \
-            f'unpack failed while on member no. {m_off + 1}, for item no. {v_off + 1}; {payload}'
+          return False, f'unpack failed on member no. {m_off + 1}, for item no. {v_off + 1}; {payload}'
         v_off += 1
       m_off += 1
   elif pattern.type == 'P_Discard':
@@ -467,7 +465,6 @@ def _visit_node(S, node):
             return None
         _die(S, f'%smodule not found: "{node.module}"' % ('hidden ' if node.hidden else ''))
       elif node.type == 'Assign':
-        # TODO capsulate -- revert env on an invalid match!
         value = _visit_node(S, node.value)
         status, payload = _visit_pattern(S, node.pattern, value)
         return _die(S, f'match error: {payload}') if not status else value
@@ -531,17 +528,17 @@ def _visit_node(S, node):
         return RyBuiltin(
           S.env.get(f'#:{node.name}', False) or _die(S, f'builtin "{node.name}" not found'))
       elif node.type == 'Path':
-        parent = S.env.get(node.parent, False)
-        if parent is False:
-          _die(S, f'"{node.parent}" is not defined')
-        if node.path:
-          res = parent
-          for piece in node.path:
-            if res.type != 'routeable':
-              _die(S, f'type \'{res.type}\' is not routeable: {res}')
-            res = res.env.get(piece) or _die(S, f'no property "{piece}" for {res}')
-          return res
-        return parent
+        res = _visit_node(S, node.parent)
+        for piece in node.path:
+          if res.type != 'routeable':
+            _die(S, f'type \'{res.type}\' is not routeable: {res}')
+          res = res.env.get(piece) or _die(S, f'no property "{piece}" for {res}')
+        return res
+      elif node.type == 'Request':
+        value = S.env.get(node.name, False)
+        if value is False:
+          _die(S, f'"{node.name}" is not defined')
+        return value
       elif node.type == 'Expect':
         # Evaluate the guard; if it's not false, proceed. If it is, die.
         guard = _visit_node(S, node.guard)
