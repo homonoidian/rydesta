@@ -38,15 +38,15 @@ Implicit types could be known of only after interpretation of a corresponding co
 
 Function signatures (priority of function invokation):
 
-| **Name**                     | **Signature**                             | **Example** (separated by `;`)           |
-|------------------------------|-------------------------------------------|------------------------------------------|
-| Identity pattern             | 2^24                                      | 1 ; [] ; "foobar"                        |
-| Guarding pattern             | 2^21                                      | (x of num) ; (x, is-ok? x)               |
-| Routeable extraction         | 2^18 + rec(fields) * (no. of fields + 1)  | (Vector x1 x2) ; (Number (value of num)) |
-| Vector unpacking             | 2^15 + rec(members) * (no. of fields + 1) | [1 2 3 a b c "he"] ; [["a" "b" c] 2]     |
-| Identifier, discard          | 2^12                                      | _ ; foobar ; quux                        |
-| Named groups (captures)      | 2^9                                       | x* y+                                    |
-| Discarding groups (captures) | 2^6                                       | (*) (+)                                  |
-| Anything else                | 0                                         |                                          |
+| **Name**                     | **Signature**                             | **Example** (separated by `;`)             |
+|------------------------------|-------------------------------------------|--------------------------------------------|
+| Identity pattern             | 2^24                                      | `1 ; [] ; "foobar"`                        |
+| Guarding pattern             | 2^21                                      | `(x of num) ; (x, is-ok? x)`               |
+| Routeable extraction         | 2^18 + rec(fields) * (no. of fields + 1)  | `(Vector x1 x2) ; (Number (value of num))` |
+| Vector unpacking             | 2^15 + rec(members) * (no. of fields + 1) | `[1 2 3 a b c "he"] ; [["a" "b" c] 2]`     |
+| Identifier, discard          | 2^12                                      | `_ ; foobar ; quux`                        |
+| Named groups (captures)      | 2^9                                       | `x* ; y+`                                  |
+| Discarding groups (captures) | 2^6                                       | `(*) ; (+)`                                |
+| Anything else                | 0                                         | unreachable under normal circumstances     |
 
 ### Section 3.
