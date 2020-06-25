@@ -8,7 +8,7 @@ Explicit types are granular, distinguishable data types.
   via `$NAME`, e.g.: `"My name is $name"`;
 + `num` (number):  `1234`, `12.34`, `.1234`, `0x0123456789abcdef`, `0o01234567`, `0b01`;
   represented with Python's `Fraction`, so, e.g., `.1 + .2 is .3` yields `true`.
-+ `vec` (vector): `[1 2 3 4]`; items must be atomar (i.e., these data types plus
++ `vec` (vector): `[1 2 3 4]`; items must be atomar (i.e., explicit data types plus
   parenthesized expressions, e.g.: `[(2 + 2 * 2) 2 3 (foo bar baz)]`)
 
 ### Section 1. Implicit types.

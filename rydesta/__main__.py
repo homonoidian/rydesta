@@ -1,5 +1,8 @@
 """
-Usage: rydesta [options] [SCRIPT]
+Usage: rydesta [options] [suite|SCRIPT]
+
+Commands:
+  suite   Evaluate the tests of 'suite/'.
 
 Options:
   -t --time   Display bootstrap time and time a feed takes.
@@ -53,12 +56,20 @@ class RyCLI:
       file = pathlib.Path(args['SCRIPT'])
       if not file.exists():
         sys.exit(f'No such file: "{file}"')
-      master = RyCLI._time(
-        args['--time'], lambda: RyCLI._master(file.absolute()), 'bootstrap')
+      master = RyCLI._time(args['--time'],
+        lambda: RyCLI._master(file.absolute()), 'bootstrap')
       try:
         RyCLI._time(args['--time'], lambda: master.feed(file.read_text()))
       except rydesta.RyError as error:
         RyCLI._report(error)
+    elif args['suite']:
+      suite = pathlib.Path('suite')
+      for file in sorted(suite.glob('[0-9]*.ry')):
+        print(f'--- {file} ---')
+        master = RyCLI._time(args['--time'],
+          lambda: RyCLI._master(file.absolute()), 'bootstrap')
+        RyCLI._time(args['--time'],
+          lambda: master.feed(file.read_text()))
     else:
       master = RyCLI._time(
         args['--time'], lambda: RyCLI._master('<interactive>'), 'bootstrap')
