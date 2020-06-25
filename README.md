@@ -16,10 +16,12 @@ Latest PyPy works, too.
   (time it took to evaluate a line of code (REPL), or a whole script), pass flag
   `-t` (or `--time`).
 
-### Guides?
+### The state of the language?
 
-> If you feed it some code, chances are — it won't work. And probably it's not going
-> to be your fault at all.
+It's rev. 001. Meaning if you feed it some code, chances are — it won't work. And probably
+it's not going to be your fault at all.
+
+### Guides?
 
 It's just too early and naive to have any guide right now, I think. Rydesta's
 an ambiguous language and an unfinished language, too, and that's a killing pair.
