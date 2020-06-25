@@ -140,13 +140,13 @@ class Reader:
     elif token == 'BOL':
       type_ = 'beginning-of-line'
     elif token == 'ID':
-      type_ = 'identifier'
+      type_ = f'identifier "{self.token.value}"'
     elif token == 'BUILTIN':
-      type_ = 'builtin literal'
+      type_ = f'builtin literal "{self.token.value}"'
     elif token == 'NUM':
-      type_ = 'number literal'
+      type_ = f'number literal "{self.token.value}"'
     elif token == 'STR':
-      type_ = 'string literal'
+      type_ = f'string literal {self.token.value}'
     return type_
 
   ### Lexer. ##############

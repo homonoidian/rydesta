@@ -1,0 +1,49 @@
+; 1| Type is root of the type hierarchy.
+
+  expect [num str vec bool] are of type
+
+; 2| Variations.
+
+  square n -> n * n
+  expect square of variations
+
+; 2.1| Variations are sorted by signature.
+
+  square 1 -> "one"
+  square [(*)] -> "star"
+  square [n] -> [vec n]
+
+  expect square 2 is 4
+  expect square 1 is "one"
+  expect square ["any" "thing"] is "star"
+  expect square [3] is [vec 3]
+
+; 3| Function: TODO
+
+; 4| Object.
+
+  obj Vector x y
+  expect Vector of object
+
+; 5| Routeable.
+
+  vector = new Vector 1 2
+
+  expect vector of routeable
+  expect vector.x is 1
+  expect vector.y is 2
+
+; 6| Excerpt.
+
+  expect quote (1 + 1) of excerpt
+
+; 7| Builtin.
+
+  expect #:getattr of builtin
+
+; 8| Boolean.
+
+  expect true of bool
+  expect false of bool
+
+#:print "[implicit types]: pass"

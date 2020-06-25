@@ -85,7 +85,7 @@ quoting 'else cond conseq -> {
 ; "hello" and "david" ==> "david"
 ; false and say "hello" ==> false
 ; true and say "hello" ==> OUT: hello
-; 1 or 2 ==> 2
+; 1 or 2 ==> 1
 ; false or "baz" ==> "baz"
 ; true or say "hello" ==> true
 ; false or say "hello" ==> OUT: hello
@@ -105,6 +105,19 @@ for left right {
     }
   }
 }
+
+; --- And back to identity! ---------------------
+
+#:set-precedence PRECEDENCE_IDENTITY
+
+; [1 2 3] are of num ==> true
+'are_of [] _ -> true
+'are_of [item rest*] T -> item of T and rest are of T
+
+; [3 3 3] are 3 ==> true
+; [3 4 5] are 5 ==> false
+'are [] _ -> true
+'are [item rest*] value -> item is value and rest are value
 
 ; --- Operations --------------------------------
 
@@ -131,6 +144,7 @@ for (left of str) (right of str) {
 
 ; 1234 + 5678 ==> 6912
 ; 1234 - 5678 ==> -4444
+; .1 + .2 ==> 0.3
 for (left of num) (right of num) {
   '+ -> H.operation "RyNum" "add" [left right]
   '- -> H.operation "RyNum" "sub" [left right]

@@ -1,0 +1,14 @@
+; 1| String interpolation.
+  name = "John Doe"
+  expect "My name is $name" is "My name is John Doe"
+
+; 2| Hexadecimal, octal, binary numbers. Numbers are fractions.
+  expect 0x123af is 74671
+  expect 0o1236 is 670
+  expect 0b1010 is 10
+  expect .1 + .2 is .3
+
+; 3| Vectors.
+  expect [(2 + 2 * 2) 2 3 "alpha" "beta" "gamma"]
+
+#:print "[explicit types]: pass"
