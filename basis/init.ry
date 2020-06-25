@@ -16,17 +16,26 @@
 PRECEDENCE_TERNARY = 1
 PRECEDENCE_JUNCTION = 2
 PRECEDENCE_IDENTITY = 3
+PRECEDENCE_ADD = 4
+PRECEDENCE_MUL = 5
+
+; Guards should operate on identity level.
+#:set-guard-precedence PRECEDENCE_IDENTITY
 
 ; --- Ternary when-else -------------------------
 
-#:precedence PRECEDENCE_TERNARY
+#:set-precedence PRECEDENCE_TERNARY
 
+; say "true" when true ==> OUT: true
+; say "false" when false ==> false
 quoting 'when conseq cond ->
   case unquote cond {
     false => false
     _ -> unquote conseq
   }
 
+; 1 else 2 ==> 1
+; false else "quux" ==> "quux"
 quoting 'else cond conseq -> {
   val = unquote cond
   if not val {
@@ -38,22 +47,52 @@ quoting 'else cond conseq -> {
 
 ; --- Identity ----------------------------------
 
-#:precedence PRECEDENCE_IDENTITY
+#:set-precedence PRECEDENCE_IDENTITY
 
+; "hello" is "hello" ==> true
+; 1 is 2 ==> false
+; 1 is not 2 ==> true
+; TODO: compare instances?
 'is _ _ -> false
 'is left (left) -> true
 'is_not left right -> not (left is right)
 
-; TODO: in, of?
+; 1 of "hello" ==> false
+; [1 2 3] of vec ==> true
+; TODO: T may be a vector of types
+'of value T -> {
+  ; T has attribute `type` and its value is `type` => a type was given
+  ; Using equals? here since `is` doesn't know how to equal Python objects.
+  ; Note that #:getattr returns false when attribute was not found.
+  if #:equals? (#:getattr T "type") (#:getattr "type" "value") {
+    ; Each type's value is a Python string of typename (see master, kernel).
+    ; each value's type is a Python string (see children of _Box etc. of machine).
+    if #:equals? (#:getattr value "type") (#:getattr T "value") {
+      ret true
+    }
+  }
+  false
+}
+'not_of value T -> not (value of T)
+
+; TODO: in
 
 ; --- Junctions ---------------------------------
 
-#:precedence PRECEDENCE_JUNCTION
+#:set-precedence PRECEDENCE_JUNCTION
 
+; 1 and 2 ==> 2
+; "hello" and "david" ==> "david"
+; false and say "hello" ==> false
+; true and say "hello" ==> OUT: hello
+; 1 or 2 ==> 2
+; false or "baz" ==> "baz"
+; true or say "hello" ==> true
+; false or say "hello" ==> OUT: hello
 for left right {
   quoting 'and -> {
     value = unquote left
-    case unquote left {
+    case value {
       false => value
       _ -> unquote right
     }
@@ -67,5 +106,62 @@ for left right {
   }
 }
 
-; Leave precedence on identity's level.
-#:precedence PRECEDENCE_IDENTITY
+; --- Operations --------------------------------
+
+; A helper to solve some common problems.
+; XXX may be a little buggy?
+
+obj Helper {
+  operation (return-of of str) (operator of str) (args of vec) ->
+    #:kernel-glob-call return-of [(#:from-operator operator args)]
+  to-python-int (number of num) ->
+    #:kernel-builtin-call "int" [(#:getattr number "value")]
+}
+
+H = new Helper
+
+; Addition-level.
+
+#:set-precedence PRECEDENCE_ADD
+
+; "foo" + "bar" ==> "foobar"
+for (left of str) (right of str) {
+  '+ -> H.operation "RyStr" "add" [left right]
+}
+
+; 1234 + 5678 ==> 6912
+; 1234 - 5678 ==> -4444
+for (left of num) (right of num) {
+  '+ -> H.operation "RyNum" "add" [left right]
+  '- -> H.operation "RyNum" "sub" [left right]
+}
+
+; Multiplication-level.
+
+#:set-precedence PRECEDENCE_MUL
+
+; "foo" * 3 ==> "foofoofoo"
+'* (left of str) (right of num) ->
+  H.operation "RyStr" "mul" [left (H.to-python-int right)]
+
+; [0] * 100 => [0 0 0 ...]
+'* (left of vec) (right of num) ->
+  H.operation "RyVec" "mul" [left (H.to-python-int right)]
+
+; 2 * 2 ==> 4
+; 2 / 2 ==> 1
+for (left of num) (right of num) {
+  '* -> H.operation "RyNum" "mul" [left right]
+  '/ -> H.operation "RyNum" "truediv" [left right]
+}
+
+; +1234 ==> 1234
+; -1234 ==> -1234
+for (operand of num) {
+  ; XXX '+ doesn't really change anything, does it?
+  '+ -> operand
+  '- -> 0 - operand
+}
+
+; Leave precedence on addition's level.
+#:set-precedence PRECEDENCE_ADD

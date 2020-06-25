@@ -109,6 +109,7 @@ class RyFunction(HasType):
     params = excerpt.split('->')[0].strip()
     if self.name == params: # zero-arity
       return self.name
+    params = self._help_rmprefix(params, self.name).strip()
     return f'{self.name}: {params} -> ...'
 
   def __repr__(self):
@@ -167,8 +168,6 @@ class RyBuiltin(HasType, _Box):
   type = 'builtin'
 
   def __repr__(self):
-    if doc := self.value.__doc__:
-      return f'[builtin: {doc[0].lower() + doc[1:]}]'
     return f'[builtin]'
 
 
@@ -302,7 +301,8 @@ def _visit_pattern(S, pattern, value):
     if not (isinstance(result, RyBool) and result.value):
       return False, f'vetoed by the guard of "{pattern.param}"'
   elif pattern.type == 'P_Extract':
-    if not (obj := S.env.get(pattern.obj, False)):
+    obj = S.env.get(pattern.obj, False)
+    if not obj:
       _die(S, f'entity "{pattern.obj}" does not exist')
     elif not isinstance(obj, RyObject):
       if not _equals(obj, value):
@@ -331,7 +331,10 @@ def _visit_pattern(S, pattern, value):
     if multis + manys > 2 and (multis + manys) * 1.5 > len(pattern.members):
       _die(S, 'several multi-item captures must be delimited')
     v_off, m_off = 0, 0
-    while members := pattern.members[m_off:]:
+    while True:
+      members = pattern.members[m_off:]
+      if not members:
+        break
       member = pattern.members[m_off]
       values = value.value[v_off:]
       named, multi = 'Named' in member.type, 'Multi' in member.type
@@ -497,12 +500,12 @@ def _visit_node(S, node):
         status, payload = _visit_pattern(S, node.pattern, value)
         return _die(S, f'match error: {payload}') if not status else value
       elif node.type == 'Call':
+        def arity_is(arity):
+          if len(node.args) != arity:
+            _die(S, f'special-form "{node.callee.name}" receives exactly one argument')
+          return True
         if node.callee.type == 'Request':
           # A bunch of special-form calls (somewhat like LISP's):
-          def arity_is(arity):
-            if len(node.args) != arity:
-              _die(S, f'special-form "{node.callee.name}" receives exactly one argument')
-            return True
           if node.callee.name == 'unquote' and arity_is(1):
             quoted = _visit_node(S, node.args[0])
             if not isinstance(quoted, RyExcerpt):
@@ -511,8 +514,31 @@ def _visit_node(S, node):
           elif node.callee.name == 'quote' and arity_is(1):
             return RyExcerpt(S, node.args[0])
         callee = _visit_node(S, node.callee)
-        if isinstance(callee, RyVariations):
-          args = [(RyExcerpt if callee.quoting else _visit_node)(S, arg) for arg in node.args]
+        if isinstance(callee, RyTypeType):
+          # E.g. num "12.34" would return "12.34" converted to number.
+          # Note that these "functions" are, too, considered special-form.
+          # It's just easier to make it happen here than in the dedicated section.
+          if arity_is(1):
+            arg = _visit_node(S, node.args)[0]
+            if callee.value in ('num', 'str', 'vec'):
+              if callee.value == 'num':
+                if isinstance(arg, RyStr): # num "12.34" ==> 12.34
+                  try:
+                    return RyNum(Fraction(arg.value))
+                  except ValueError as error:
+                    _die(S, f'was not able to convert to num: {arg}')
+              elif callee.value == 'str':
+                if isinstance(arg, RyNum): # str 12.34 ==> "12.34"
+                  return RyStr(repr(arg))
+              elif callee.value == 'vec':
+                if isinstance(arg, RyStr): # vec "hello" ==> ["h" "e" "l" "l" "o"]
+                  return RyVec([RyStr(ch) for ch in arg.value])
+            _die(S, f'no special-form "{callee.value}" to convert {arg} to {callee})')
+        elif isinstance(callee, RyVariations):
+          if callee.quoting:
+            args = [RyExcerpt(S, arg) for arg in node.args]
+          else:
+            args = _visit_node(S, node.args)
           for idx, variation in enumerate(callee.variations):
             if variation.arity == len(args):
               capsule = variation.state.copy()
@@ -545,7 +571,12 @@ def _visit_node(S, node):
           node = last.value if last.type == 'Ret' else last
           # TCO: continue looping...
         elif isinstance(callee, RyBuiltin):
-          return callee.value(S, *_visit_node(S, node.args))
+          try:
+            return callee.value(S, *_visit_node(S, node.args))
+          except _DeathError as error:
+            raise error # re-raise
+          except Exception as error:
+            _die(S, f'python exception: {error}')
         else:
           _die(S, f'callee of type {callee.type} is not callable: {callee}')
       elif node.type == 'Instance':
@@ -616,7 +647,10 @@ def _visit_node(S, node):
 def visit(state):
   try:
     last = None
-    while node := state.reader.next():
+    while True:
+      node = state.reader.next()
+      if not node:
+        break
       last = _visit_node(state, node)
     return last
   except ReaderError as error:

@@ -72,7 +72,8 @@ class Reader:
         'hidden', 'exposed', 'new', 'obj', 'secret', 'umbrella',
         'quoting', 'naked'
       },
-      'precedence': {}
+      'precedence': {},
+      'guard-precedence': 1
     }
     self.precedence = 1 # precedence level is global
     self.update_symbol_regex()
@@ -375,7 +376,7 @@ class Reader:
   #| Patterns:
 
   def _pattern_guard(self):
-    # pattern_guard ::= ID ("," infix | <operator with precedence=2> value)
+    # pattern_guard ::= ID ("," infix | <operator with precedence=switches/guard-precedence> value)
     #   -> P_Guard(param, guard)
     #   / False
     line = self.line
@@ -389,7 +390,8 @@ class Reader:
         self._expected('a guarding expression', line)
       return RyNode('P_Guard', line, param=param.value, guard=guard)
     #- Nuclear guards, e.g., "(x in [1 2 3])", or "(x not of num)"
-    infix = self._consume(*[x for x, p in self.switches['precedence'].items() if p[1] == 2])
+    infix = self._consume(
+      *[x for x, p in self.switches['precedence'].items() if p[1] == self.switches['guard-precedence']])
     if infix is not False:
       value = self._value()
       if value is False:
@@ -480,7 +482,10 @@ class Reader:
     terms = []
     if self._consume('{') is False:
       return False
-    while term := self.next('}'):
+    while True:
+      term = self.next('}')
+      if not term:
+        break
       terms.append(term)
     if self._consume('}') is False:
       self._die('unexpected term while in block: expected "}"')
@@ -761,6 +766,9 @@ def pretty(reader, *, spaces=2):
         buf.append(_single(item))
     return '\n'.join(buf) or repr(entity)
   def _iter():
-    while node := reader.next():
+    while True:
+      node = reader.next()
+      if not node:
+        break
       yield _single(node)
   return '\n'.join(_iter())
