@@ -11,4 +11,4 @@
 ; 3| Vectors.
   expect [(2 + 2 * 2) 2 3 "alpha" "beta" "gamma"]
 
-#:print "[explicit types]: pass"
+say "[explicit types]: pass"

@@ -46,4 +46,4 @@
   expect true of bool
   expect false of bool
 
-#:print "[implicit types]: pass"
+say "[implicit types]: pass"

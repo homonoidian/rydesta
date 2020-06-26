@@ -91,8 +91,10 @@ class Reader:
   def merge(self, other):
     """Merge the switches from this parser with the switches of another one."""
     for switch, value in other.switches.items():
-      # Happily, update works for both sets and dicts.
-      self.switches[switch].update(value)
+      if type(value) in (dict, set):
+        self.switches[switch].update(value)
+      else:
+        self.switches[switch] = value
 
   def update(self, source):
     """Roll back the reader's progress and substitute the source."""
@@ -174,7 +176,7 @@ class Reader:
     for type_, token in self.switches['tokens'].items():
         if self._match(token):
           return self._mk_token(type_)
-    if self._match(r'[a-zA-Z][a-zA-Z0-9_\-]*(?<!\-)\??'):
+    if self._match(r'_?[a-zA-Z][a-zA-Z0-9_\-]*(?<!\-)\??'):
       if self.buf in self.switches['keywords']:
         return self._mk_token(self.buf.upper())
       return self._mk_token('ID')
@@ -188,7 +190,7 @@ class Reader:
       return self._mk_token('STR')
     elif self._match(self._symbol_regex):
       return self._mk_token(self.buf)
-    elif self._match(r'[ \t\r]+|;[^\n]*'):
+    elif self._match(r'[ \t\r]+|;[^\n]*\n'):
       return self._progress() # ignore
     elif self._match(r'\n+'):
       return self._mk_token('NL', value=False)

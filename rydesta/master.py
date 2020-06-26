@@ -38,7 +38,7 @@ class Master:
        etc., and of Rydesta's type hierarchy."""
     # Values:
     self.define('PATH', RyStr(f'.;{self.basis}'))
-    self.define('MODULES', RyVec([]))
+    self.define('MODULE-CACHE', RyVec(set()))
     # Type hierarchy:
     self.define('true', RyBool(True))
     self.define('false', RyBool(False))
@@ -72,7 +72,7 @@ class Master:
 
   def load_init(self):
     """Load basis/init.ry."""
-    self.get('MODULES').value.append(RyStr(f'{self.basis / "init.ry"}'))
+    self.get('MODULE-CACHE').value.add(RyStr(f'{self.basis / "init.ry"}'))
     self.feed((self.basis / 'init.ry').read_text())
 
   def feed(self, string):

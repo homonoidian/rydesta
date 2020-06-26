@@ -6,6 +6,8 @@
 ; on a function, it must exist beforehand.
 ; === ALEXEY YURCHENKO, 2020
 
+;; === OPERATORS ================================
+
 ; --- Identity unary ----------------------------
 
 'not (false) -> true
@@ -75,8 +77,6 @@ quoting 'else cond conseq -> {
 }
 'not_of value T -> not (value of T)
 
-; TODO: in
-
 ; --- Junctions ---------------------------------
 
 #:set-precedence PRECEDENCE_JUNCTION
@@ -106,32 +106,46 @@ for left right {
   }
 }
 
+; --- Helpers -----------------------------------
+; At this point we can define a bunch of nice helpers.
+
+obj _HelperObj {
+  operation (return-of of str) (operator of str) (args of vec) ->
+    #:kernel-glob-call return-of [(#:from-operator operator args)]
+
+  to-python-int (number of num) ->
+    #:kernel-builtin-call "int" [(#:getattr number "value")]
+}
+
+_H = new _HelperObj
+
 ; --- And back to identity! ---------------------
 
 #:set-precedence PRECEDENCE_IDENTITY
 
 ; [1 2 3] are of num ==> true
-'are_of [] _ -> true
-'are_of [item rest*] T -> item of T and rest are of T
+'are_of [] _ -> false
+'are_of [item] T -> item of T
+'are_of [item rest+] T -> item of T and rest are of T
+'are_not_of values T -> not (values are of T)
 
 ; [3 3 3] are 3 ==> true
 ; [3 4 5] are 5 ==> false
-'are [] _ -> true
-'are [item rest*] value -> item is value and rest are value
+'are [] _ -> false
+'are [item] value -> item is value
+'are [item rest+] value -> item is value and rest are value
+'are_not values value -> not (values are value)
+
+; 1 in [1 2 3] ==> true
+; [1 2 3] in [[1 2 3] [4 5 6]] ==> true
+; [] in [[]] ==> true
+; 1 in [] ==> false
+'in _ [] -> false
+'in entity [item] -> entity is item
+'in entity [item rest+] -> entity is item or entity in rest
+'not_in entity items -> not (entity in items)
 
 ; --- Operations --------------------------------
-
-; A helper to solve some common problems.
-; XXX may be a little buggy?
-
-obj Helper {
-  operation (return-of of str) (operator of str) (args of vec) ->
-    #:kernel-glob-call return-of [(#:from-operator operator args)]
-  to-python-int (number of num) ->
-    #:kernel-builtin-call "int" [(#:getattr number "value")]
-}
-
-H = new Helper
 
 ; Addition-level.
 
@@ -139,15 +153,15 @@ H = new Helper
 
 ; "foo" + "bar" ==> "foobar"
 for (left of str) (right of str) {
-  '+ -> H.operation "RyStr" "add" [left right]
+  '+ -> _H.operation "RyStr" "add" [left right]
 }
 
 ; 1234 + 5678 ==> 6912
 ; 1234 - 5678 ==> -4444
 ; .1 + .2 ==> 0.3
 for (left of num) (right of num) {
-  '+ -> H.operation "RyNum" "add" [left right]
-  '- -> H.operation "RyNum" "sub" [left right]
+  '+ -> _H.operation "RyNum" "add" [left right]
+  '- -> _H.operation "RyNum" "sub" [left right]
 }
 
 ; Multiplication-level.
@@ -156,17 +170,17 @@ for (left of num) (right of num) {
 
 ; "foo" * 3 ==> "foofoofoo"
 '* (left of str) (right of num) ->
-  H.operation "RyStr" "mul" [left (H.to-python-int right)]
+  _H.operation "RyStr" "mul" [left (_H.to-python-int right)]
 
 ; [0] * 100 => [0 0 0 ...]
 '* (left of vec) (right of num) ->
-  H.operation "RyVec" "mul" [left (H.to-python-int right)]
+  _H.operation "RyVec" "mul" [left (_H.to-python-int right)]
 
 ; 2 * 2 ==> 4
 ; 2 / 2 ==> 1
 for (left of num) (right of num) {
-  '* -> H.operation "RyNum" "mul" [left right]
-  '/ -> H.operation "RyNum" "truediv" [left right]
+  '* -> _H.operation "RyNum" "mul" [left right]
+  '/ -> _H.operation "RyNum" "truediv" [left right]
 }
 
 ; +1234 ==> 1234
@@ -179,3 +193,9 @@ for (operand of num) {
 
 ; Leave precedence on addition's level.
 #:set-precedence PRECEDENCE_ADD
+
+;; === I/O ================================
+
+say entity ->
+  ; say returns None; None is not `false` in Rydesta.
+  #:print entity and entity

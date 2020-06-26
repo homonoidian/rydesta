@@ -44,7 +44,7 @@ class RyCLI:
       start = time()
       result = timee()
       elapsed = time() - start
-      print(f'[TIME] {prefix} took ~{elapsed*1000}ms')
+      print(f'[TIME] {prefix} took ~{round(elapsed % 60, 3)}s')
       return result
     return timee()
 

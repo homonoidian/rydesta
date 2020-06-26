@@ -1,0 +1,63 @@
+; This file tests assertions made in `init.ry` before almost every function
+; as examples.
+
+; 1. When
+  expect say "[when] this should be visible" when true
+  expect not (say "[when] this should not be visible" when false)
+
+; 2. Else
+  expect (1 else 2) is 1
+  expect (false else "quux") is "quux"
+
+; 3. Is
+  expect "hello" is "hello"
+  expect not (1 is 2)
+  expect 1 is not 2
+
+; 4. Of
+  expect not (1 of "hello")
+  expect [1 2 3] of vec
+
+; 5. And/Or
+  expect 1 and 2
+  expect "hello" and "david"
+  expect not (false and say "[and] this should not be visible")
+  expect true and say "[and] this should be visible"
+
+  expect 1 or 2
+  expect false or "baz"
+  expect true or say "[or] this should not be visible"
+  expect false or say "[or] this should be visible"
+
+; 6. are of, are not of
+  expect [1 2 3] are of num
+  expect ["hello" "world"] are of str
+  expect not ([] are of vec)
+  expect not ([1 2 3] are not of num)
+  expect ["hello" 1 2 say] are not of num
+
+; 7. are, are not
+  expect [3 3 3] are 3
+  expect not ([] are 1)
+  expect [3 4 5] are not 5
+
+; 8. In
+  expect 1 in [1 2 3]
+  expect [1 2 3] in [[1 2 3] [4 5 6]]
+  expect [] in [[]]
+  expect not (1 in [])
+  expect "John" not in ["David" "Bernie"]
+
+; 9. Operators
+  expect "foo" + "bar" is "foobar"
+  expect 1234 + 5678 is 6912
+  expect 1234 - 5678 is -4444
+  expect .1 + .2 is 0.3
+  expect "foo" * 3 is "foofoofoo"
+  expect [0] * 10 is [0 0 0 0 0 0 0 0 0 0]
+  expect 2 * 2 is 4
+  expect 2 / 2 is 1
+  expect +1234 is 1234
+  expect -1234 is -1234
+
+say "[init]: pass"

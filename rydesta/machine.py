@@ -4,7 +4,7 @@ from .error import RyError
 from .reader import RyNode, ReaderError
 
 from pathlib import Path
-from operator import itemgetter
+from operator import attrgetter
 from textwrap import indent, dedent
 from fractions import Fraction
 from linecache import getline
@@ -394,11 +394,11 @@ def _visit_node(S, node):
       S.line = node.line
       if node.type == 'Cases':
         head = _visit_node(S, node.head)
-        cases = sorted(node.cases,
+        node.cases.sort(
           # ValueCases have priority over MatchCases.
           key=lambda x: 2**32 if x.type == 'ValueCase' else _sign(x.cond),
           reverse=True)
-        for case in cases:
+        for case in node.cases:
           if case.type == 'MatchCase':
             # In cases, P_Discard has the highest priority.
             if case.cond.type == 'P_Discard':
@@ -470,29 +470,28 @@ def _visit_node(S, node):
       elif node.type == 'ForBlock':
         return _visit_node(S, node.functions)[-1]
       elif node.type == 'Needs':
-        from .master import Master
-        for modpath in S.env['PATH'].value.split(';'):
-          path = Path(modpath) / f'{"_" if node.hidden else ""}{node.module}.ry'
+        cache = S.env['MODULE-CACHE'].value
+        for location in S.env['PATH'].value.split(';'):
+          path = (Path(location) / f'{"_" if node.hidden else ""}{node.module}.ry').absolute()
           if path.exists():
-            imported = [x.value for x in S.env['MODULES'].value]
-            if str(path) in imported:
-              return None
-            master = Master(path.absolute())
-            master.kernel()
-            master.load_init()
-            master.feed(path.read_text())
-            S.reader.merge(master.reader)
-            S.env['MODULES'].value.append(RyStr(str(path)))
-            if node.expose:
-              for entry, value in master.state.env.items():
-                # XXX is this right or wrong?
-                if entry == 'MODULES':
-                  S.env[entry].value += [m for m in value.value if m.value not in imported]
-                elif entry not in S.env:
-                  S.env[entry] = value
-            else:
-              name = node.module.split('/')[-1].capitalize()
-              S.env[name] = RyRouteable(node.module, master.state.env)
+            source, path = path.read_text(), str(path)
+            if path not in map(attrgetter('value'), cache):
+              from .master import Master
+              master = Master(path)
+              master.kernel()
+              master.load_init()
+              # Some strange Python-memory-related problem:
+              master.state = master.state.copy()
+              master.feed(source)
+              S.reader.merge(master.reader)
+              exports = {e: v for e, v in master.state.env.items() if not e.startswith('_')}
+              if node.expose:
+                S.env.update(exports)
+                S.env['MODULE-CACHE'].value.update({*cache, RyStr(path)})
+              else:
+                S.env['MODULE-CACHE'].value.add(RyStr(path))
+                name = node.module.split('/')[-1].capitalize()
+                S.env[name] = RyRouteable(node.module, exports)
             return None
         _die(S, f'%smodule not found: "{node.module}"' % ('hidden ' if node.hidden else ''))
       elif node.type == 'Assign':
