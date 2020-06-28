@@ -1,0 +1,175 @@
+;;; I. OPERATORS
+
+;--- PRECEDENCE values
+
+_p_ternary = 1
+_p_junction = 2
+_p_identity = 3
+_p_addition = 4
+_p_multiplication = 5
+_p_power = 6
+_p_index = 7
+_p_range = 8
+
+#:set-guard-precedence _p_identity
+
+;--- TERNARY: if, else
+; Examples:
+;   >>> 1 if false ==> false
+;   >>> 1 if true ==> 1
+;   >>> false else 1 ==> 1
+;   >>> "hello" else 1 ==> "hello"
+;   >>> "good" if true else "bad" ==> "good"
+
+#:set-precedence _p_ternary
+
+quoting 'if consequence condition ->
+  case unquote condition {
+    false => false
+    _ -> unquote consequence
+  }
+
+quoting 'else condition consequence -> {
+  condition = unquote condition
+  case condition {
+    false => unquote consequence
+    _ -> condition
+  }
+}
+
+; --- JUNCTION: and, or
+; Examples:
+;   >>> 1 and 2 ==> 2
+;   >>> 1 or 2 ==> 1
+;   >>> false and 1 ==> false
+;   >>> false or 2 ==> 2
+; NOTE: junctions quote; e.g., `(say "A") and false` won't `say`.
+
+#:set-precedence _p_junction
+
+quoting 'and lhs rhs ->
+  unquote rhs if unquote lhs
+
+quoting 'or lhs rhs ->
+  unquote lhs else unquote rhs
+
+
+; --- Python wrapper ----------------------------
+
+obj PyWrap {
+  operator = #:import "operator"
+
+  attr parent child ->
+    ; Call `getattr()` with parent, child of str as arguments.
+    #:call (#:builtin "getattr") [parent (#:to-py child)]
+
+  eq? lhs rhs ->
+    ; Check if two Python objects are equal via `__eq__`.
+    #:wraps bool (#:call (attr lhs "__eq__") [rhs])
+
+  call callee args ->
+    ; Convert args of vec to Python and apply 'callee'.
+    #:call callee (#:wraps vec (#:to-py args))
+
+  boolean op lhs rhs ->
+    #:wraps bool (call (attr operator op) [lhs rhs])
+
+  arithmetic typ op lhs rhs ->
+    #:wraps typ (call (attr operator op) [lhs rhs])
+}
+
+Python = new PyWrap
+
+; -----------------------------------------------
+
+;--- IDENTITY: not, <, >, <=, >=, is, are, of, etc.
+; Examples:
+;   >>> not 1 ==> false
+;   >>> not false => true
+;   >>> [(1 is 2) (1 is not 2)] ==> [false true]
+;   >>> [([1 2 3] are 3) ([1 2 3] are not 3)] ==> [false true]
+;   >>> [3 3 3] are 3 ==> true
+;   >>> [] of num ==> false
+;   >>> [1 2 3] are of num ==> true
+;   >>> 1 > 2 ==> false
+;   >>> 1 < 2 ==> false
+
+#:set-precedence _p_identity
+
+'not (false) -> true
+'not _ -> false
+
+'is _ _ -> false
+'is x (x) -> true
+'is_not lhs rhs -> not (lhs is rhs)
+
+'are [] _ -> false
+'are [x] rhs -> x is rhs
+'are [x xs+] rhs -> x is rhs and xs are rhs
+'are_not lhs rhs -> not (lhs are rhs)
+
+'of lhs T ->
+  if Python.eq? (Python.attr T "type") (#:to-py "type") {
+    true if Python.eq? (Python.attr lhs "type") (Python.attr T "value")
+  }
+'not_of lhs T -> not (lhs of T)
+
+; _any_of is a nypass so `1 of "hello"` is not an infinite loop
+'any_of lhs [] -> false
+'any_of lhs [T ts*] -> lhs of T or lhs any of ts
+
+'are_of [] _ -> false
+'are_of [x] T -> x of T
+'are_of [x xs+] T -> x of T and xs are of T
+'are_not_of lhs T -> not (lhs are of T)
+
+'in _ [] -> false
+'in entity [item rest*] -> entity is item or entity in rest
+'not_in entity items -> not (entity in items)
+
+for (lhs of num) (rhs of num) {
+  '< -> Python.boolean "lt" lhs rhs
+  '> -> Python.boolean "gt" lhs rhs
+  '<= -> Python.boolean "le" lhs rhs
+  '>= -> Python.boolean "ge" lhs rhs
+}
+
+;--- MATH operators: +, -, *, /, etc.
+
+#:set-precedence _p_addition
+
+for (lhs of num) (rhs of num) {
+  '+ -> Python.arithmetic num "add" lhs rhs
+  '- -> Python.arithmetic num "sub" lhs rhs
+}
+
+'+ (lhs of str) (rhs of str) ->
+  Python.arithmetic str "add" lhs rhs
+
+'+ (x of num) -> x
+'- (x of num) -> 0 - x
+
+#:set-precedence _p_multiplication
+
+for (lhs of num) (rhs of num) {
+  '* -> Python.arithmetic num "mul" lhs rhs
+  '/ -> Python.arithmetic num "truediv" lhs rhs
+}
+
+'* (lhs any of [str vec]) (rhs of num) ->
+  Python.arithmetic (type lhs) "mul" lhs (Python.call (#:builtin "int") [rhs])
+
+;;; II. FUNCTIONS
+
+;--- IO
+; Examples:
+;   >>> say "hello!"
+;   hello!
+;   >>> ask "What is your name? "
+;   What is your name? |
+
+say entity ->
+  #:call (#:builtin "print") [(#:to-py entity if entity of str else entity)]
+
+ask entity ->
+  #:call (#:builtin "input") [(#:to-py entity if entity of str else entity)]

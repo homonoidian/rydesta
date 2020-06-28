@@ -1,13 +1,13 @@
-; 1| Type is root of the type hierarchy.
+; 1. Type is root of the type hierarchy.
 
   expect [num str vec bool] are of type
 
-; 2| Variations.
+; 2. Variations.
 
   square n -> n * n
   expect square of variations
 
-; 2.1| Variations are sorted by signature.
+; 2.1. Variations are sorted by signature.
 
   square 1 -> "one"
   square [(*)] -> "star"
@@ -18,14 +18,14 @@
   expect square ["any" "thing"] is "star"
   expect square [3] is [vec 3]
 
-; 3| Function: TODO
+; 3. Function: TODO
 
-; 4| Object.
+; 4. Object.
 
   obj Vector x y
   expect Vector of object
 
-; 5| Routeable.
+; 5. Routeable.
 
   vector = new Vector 1 2
 
@@ -37,11 +37,11 @@
 
   expect quote (1 + 1) of excerpt
 
-; 7| Builtin.
+; 7. Builtin.
 
-  expect #:getattr of builtin
+  expect #:builtin of builtin
 
-; 8| Boolean.
+; 8. Boolean.
 
   expect true of bool
   expect false of bool

@@ -1,9 +1,7 @@
-; This file tests assertions made in `init.ry` before almost every function
-; as examples.
+; 1. Ternary if.
+  expect say "[if] this should be visible" if true
+  expect not (say "[if] this should not be visible" if false)
 
-; 1. When
-  expect say "[when] this should be visible" when true
-  expect not (say "[when] this should not be visible" when false)
 
 ; 2. Else
   expect (1 else 2) is 1

@@ -501,7 +501,7 @@ def _visit_node(S, node):
       elif node.type == 'Call':
         def arity_is(arity):
           if len(node.args) != arity:
-            _die(S, f'special-form "{node.callee.name}" receives exactly one argument')
+            _die(S, f'special-form "{node.callee.name}" receives exactly {arity} argument(s)')
           return True
         if node.callee.type == 'Request':
           # A bunch of special-form calls (somewhat like LISP's):
@@ -519,7 +519,7 @@ def _visit_node(S, node):
           # It's just easier to make it happen here than in the dedicated section.
           if arity_is(1):
             arg = _visit_node(S, node.args)[0]
-            if callee.value in ('num', 'str', 'vec'):
+            if callee.value in ('num', 'str', 'vec', 'type'):
               if callee.value == 'num':
                 if isinstance(arg, RyStr): # num "12.34" ==> 12.34
                   try:
@@ -532,6 +532,8 @@ def _visit_node(S, node):
               elif callee.value == 'vec':
                 if isinstance(arg, RyStr): # vec "hello" ==> ["h" "e" "l" "l" "o"]
                   return RyVec([RyStr(ch) for ch in arg.value])
+              elif callee.value == 'type': # type 12 ==> num
+                return RyTypeType(arg.type)
             _die(S, f'no special-form "{callee.value}" to convert {arg} to {callee})')
         elif isinstance(callee, RyVariations):
           if callee.quoting:

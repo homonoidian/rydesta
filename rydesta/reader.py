@@ -173,14 +173,14 @@ class Reader:
     """Read a full token and return it. Skip whitespaces. Raise ReaderError
        on an uncaptured lexeme."""
     # NOTE that user-defined tokens are given the highest lexical precedence!
-    for type_, token in self.switches['tokens'].items():
+    for type_, token in sorted(self.switches['tokens'].items(), reverse=True):
         if self._match(token):
           return self._mk_token(type_)
     if self._match(r'_?[a-zA-Z][a-zA-Z0-9_\-]*(?<!\-)\??'):
       if self.buf in self.switches['keywords']:
         return self._mk_token(self.buf.upper())
       return self._mk_token('ID')
-    elif self._match(r'\'[^\d\s\'"\.\])}=,]+'):
+    elif self._match(r'\'[^\d\s\'"\.\])},]+'):
       return self._mk_token('ID')
     elif self._match(r'#:[a-zA-Z_\-]+(?<!\-)\??'):
       return self._mk_token('BUILTIN')
