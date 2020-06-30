@@ -15,6 +15,7 @@ import pathlib
 import readline
 
 from time import time
+from textwrap import indent
 
 class RyCLI:
   """A command-line interface to Rydesta."""
@@ -26,7 +27,7 @@ class RyCLI:
     """Properly initialize a new master."""
     master = rydesta.Master(filename)
     master.kernel()
-    master.load_init()
+    master.boot()
     return master
 
   @staticmethod
@@ -36,7 +37,7 @@ class RyCLI:
     lineno = error.meta['lineno']
     kind = error.meta['kind']
     (sys.exit if quit else print)(
-      f'{filename}:{lineno}:\n  {kind}: {error.reason}')
+      f'{filename}:{lineno}:\n  {kind}:{indent(error.reason, " " * 2)}')
 
   @staticmethod
   def _time(enable, timee, prefix='evaluation'):

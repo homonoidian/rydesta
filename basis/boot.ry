@@ -1,6 +1,6 @@
 ;;; I. OPERATORS
 
-;--- PRECEDENCE values
+;--- Precedence values.
 
 _p_ternary = 1
 _p_junction = 2
@@ -13,7 +13,10 @@ _p_range = 8
 
 #:set-guard-precedence _p_identity
 
-;--- TERNARY: if, else
+; -----------------------------------------------
+
+
+;--- Ternary: if, else.
 ; Examples:
 ;   >>> 1 if false ==> false
 ;   >>> 1 if true ==> 1
@@ -37,7 +40,8 @@ quoting 'else condition consequence -> {
   }
 }
 
-; --- JUNCTION: and, or
+
+; --- Junction: and, or.
 ; Examples:
 ;   >>> 1 and 2 ==> 2
 ;   >>> 1 or 2 ==> 1
@@ -56,7 +60,7 @@ quoting 'or lhs rhs ->
 
 ; --- Python wrapper ----------------------------
 
-obj PyWrap {
+obj _PyWrap {
   operator = #:import "operator"
 
   attr parent child ->
@@ -78,11 +82,12 @@ obj PyWrap {
     #:wraps typ (call (attr operator op) [lhs rhs])
 }
 
-Python = new PyWrap
+_Python = new _PyWrap
 
 ; -----------------------------------------------
 
-;--- IDENTITY: not, <, >, <=, >=, is, are, of, etc.
+
+;--- Identity: not, <, >, <=, >=, is, are, of, etc.
 ; Examples:
 ;   >>> not 1 ==> false
 ;   >>> not false => true
@@ -109,12 +114,12 @@ Python = new PyWrap
 'are_not lhs rhs -> not (lhs are rhs)
 
 'of lhs T ->
-  if Python.eq? (Python.attr T "type") (#:to-py "type") {
-    true if Python.eq? (Python.attr lhs "type") (Python.attr T "value")
+  if _Python.eq? (_Python.attr T "type") (#:to-py "type") {
+    true if _Python.eq? (_Python.attr lhs "type") (_Python.attr T "value")
   }
 'not_of lhs T -> not (lhs of T)
 
-; _any_of is a nypass so `1 of "hello"` is not an infinite loop
+; _any_of is a bypass so `1 of "foobar"` is not an infinite loop
 'any_of lhs [] -> false
 'any_of lhs [T ts*] -> lhs of T or lhs any of ts
 
@@ -128,48 +133,91 @@ Python = new PyWrap
 'not_in entity items -> not (entity in items)
 
 for (lhs of num) (rhs of num) {
-  '< -> Python.boolean "lt" lhs rhs
-  '> -> Python.boolean "gt" lhs rhs
-  '<= -> Python.boolean "le" lhs rhs
-  '>= -> Python.boolean "ge" lhs rhs
+  '< -> _Python.boolean "lt" lhs rhs
+  '> -> _Python.boolean "gt" lhs rhs
+  '<= -> _Python.boolean "le" lhs rhs
+  '>= -> _Python.boolean "ge" lhs rhs
 }
 
-;--- MATH operators: +, -, *, /, etc.
+
+;--- Math operators: +, -, *, /, etc.
 
 #:set-precedence _p_addition
 
 for (lhs of num) (rhs of num) {
-  '+ -> Python.arithmetic num "add" lhs rhs
-  '- -> Python.arithmetic num "sub" lhs rhs
+  '+ -> _Python.arithmetic num "add" lhs rhs
+  '- -> _Python.arithmetic num "sub" lhs rhs
 }
 
 '+ (lhs of str) (rhs of str) ->
-  Python.arithmetic str "add" lhs rhs
+  _Python.arithmetic str "add" lhs rhs
+
+'+ (lhs of vec) (rhs of vec) ->
+  _Python.arithmetic vec "add" lhs rhs
 
 '+ (x of num) -> x
 '- (x of num) -> 0 - x
 
+
 #:set-precedence _p_multiplication
 
-for (lhs of num) (rhs of num) {
-  '* -> Python.arithmetic num "mul" lhs rhs
-  '/ -> Python.arithmetic num "truediv" lhs rhs
-}
+'/ (lhs of num) (rhs, rhs of num and rhs is not 0) ->
+  _Python.arithmetic num "truediv" lhs rhs
+
+'* (lhs of num) (rhs of num) ->
+  _Python.arithmetic num "mul" lhs rhs
 
 '* (lhs any of [str vec]) (rhs of num) ->
-  Python.arithmetic (type lhs) "mul" lhs (Python.call (#:builtin "int") [rhs])
+  _Python.arithmetic (type lhs) "mul" lhs (_Python.call (#:builtin "int") [rhs])
+
 
 ;;; II. FUNCTIONS
 
-;--- IO
-; Examples:
-;   >>> say "hello!"
-;   hello!
-;   >>> ask "What is your name? "
-;   What is your name? |
+default entity ->
+  ;# Return the value considered default for an entity.
+  case type entity {
+    num => 0
+    str => ""
+    vec => []
+  }
+
+
+;--- Bits of functional programming.
+
+for (fn of variations) {
+  map [] -> []
+  map [x xs*] ->
+    [(fn x)] + map fn xs
+
+  inject [] acc -> acc
+  inject [x rest*] (acc, acc of type x) ->
+    inject fn rest (fn acc x)
+
+  inject [] -> nothing
+  inject [x rest*] ->
+    inject fn ([x] + rest) (default x)
+}
+
+
+;--- Reflectivity.
+
+header (fn of function) ->
+  #:wraps str (_Python.call (_Python.attr fn "dump") [])
+
+dump (vars of variations) ->
+  #:wraps vec (_Python.attr vars "variations")
+
+
+;--- I/O
+
+_value-if-str x ->
+  #:to-py x if x of str else x
 
 say entity ->
-  #:call (#:builtin "print") [(#:to-py entity if entity of str else entity)]
+  #:call (#:builtin "print") [(_value-if-str entity)] and entity
+
+slurpy say entities ->
+  map say entities
 
 ask entity ->
-  #:call (#:builtin "input") [(#:to-py entity if entity of str else entity)]
+  #:wraps str (#:call (#:builtin "input") [(_value-if-str entity)])

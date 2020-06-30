@@ -81,6 +81,9 @@ class Master:
     except ImportError:
       _die(state, f'module "{name}" not found')
 
+  def _k_state(self, state):
+    return state
+
   def kernel(self):
     """Initialize the kernel of Rydesta. It consists of builtins like #:getattr,
        to interact with Python intimately, some required values like PATH, MODULES,
@@ -98,10 +101,12 @@ class Master:
       if name.startswith('_k_'):
         self.builtin(name[3:].replace('_', '-'), getattr(self, name))
 
-  def load_init(self):
-    """Load basis/init.ry."""
-    self.get('MODULE-CACHE').value.add(RyStr(f'{self.basis / "boot.ry"}'))
-    self.feed((self.basis / 'boot.ry').read_text())
+  def boot(self):
+    """Feed `needs boot exposed` if we're not boot."""
+    if 'basis/boot.ry' not in self.state.filename:
+      self.feed('needs boot exposed')
+    # XXX Don't know why it's required here; maybe a bug!
+    self.reader.update_symbol_regex()
 
   def feed(self, string):
     """Feed a string of source to the interpreter."""

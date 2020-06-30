@@ -3,6 +3,7 @@ import re
 from .error import RyError
 from .reader import RyNode, ReaderError
 
+from enum import Enum
 from pathlib import Path
 from operator import attrgetter
 from textwrap import indent, dedent
@@ -66,9 +67,9 @@ class RyVariations(HasType):
     self.variations = [initial]
 
   def add(self, variation):
-    """Add a new variation and re-sort the variations by their signature."""
+    """Add a new variation and re-sort the variations by their priority."""
     self.variations.append(variation)
-    self.variations.sort(key=lambda x: x.signature, reverse=True)
+    self.variations.sort(key=lambda x: x.priority, reverse=True)
 
   def __repr__(self):
     return f'[function "{self.name}" with {len(self.variations)} variation(s)]'
@@ -77,18 +78,17 @@ class RyVariations(HasType):
 class RyFunction(HasType):
   """A particular function."""
 
-  __slots__ = 'state', 'signature', 'name', 'params', 'arity', 'body', 'head'
+  __slots__ = 'state', 'priority', 'name', 'params', 'arity', 'body', 'head'
 
   type = 'function'
 
-  def __init__(self, state, signature, name, params, body, line):
+  def __init__(self, state, priority, name, params, body):
     self.name = name
     self.body = body
     self.state = state
     self.arity = len(params)
     self.params = params
-    self.head = getline(state.filename, line) or state.reader.source.splitlines()[line - 1]
-    self.signature = signature
+    self.priority = priority
 
   def _help_rmprefix(self, string, prefix):
     if string.startswith(prefix):
@@ -101,16 +101,20 @@ class RyFunction(HasType):
     return string[:]
 
   def dump(self):
-    """Return the name of the function plus the parameters of the function
-       as the user had written them."""
-    excerpt = self.head
-    excerpt = dedent(self._help_rmprefix(excerpt, 'for'))
-    excerpt = self._help_rmsuffix(excerpt, '{')
-    params = excerpt.split('->')[0].strip()
-    if self.name == params: # zero-arity
-      return self.name
-    params = self._help_rmprefix(params, self.name).strip()
-    return f'{self.name}: {params} -> ...'
+    """Dump the header of the function: it's name and it's parameters as
+       they had been written."""
+    def _iter():
+      for lineno in dict.fromkeys(param.line for param in self.params).keys():
+        excerpt = getline(self.state.filename, lineno).strip()
+        excerpt = self._help_rmprefix(excerpt, 'for')
+        excerpt = self._help_rmsuffix(dedent(excerpt), '{')
+        params = excerpt.split('->')[0].strip()
+        if self.name == params: # zero-arity
+          yield ''
+        else:
+          params = self._help_rmprefix(params, self.name).strip()
+          yield params
+    return f'{self.name}: {" ".join(_iter())}'
 
   def __repr__(self):
     return f'[{self.dump()}]'
@@ -171,6 +175,13 @@ class RyBuiltin(HasType, _Box):
     return f'[builtin]'
 
 
+class RyNothing(HasType):
+  type = 'nothing'
+
+  def __repr__(self):
+    return '[nothing]'
+
+
 class RyBool(HasType, _Box):
   type = 'bool'
 
@@ -227,6 +238,21 @@ class RyState:
     return f'[frozen state for "{self.filename}"]'
 
 
+class RyPriority:
+  """An enum-like object containing priorities of Rydesta's patterns. Actually,
+     they are large prime numbers, so they rarely, if ever, overlap."""
+
+  COMPARE = 2**24
+  GUARD = 2**21
+  EXTRACT = 2**18
+  UNPACK = 2**15
+  IDENTIFIER = 2**12
+  NAMED_GROUP = 2**9
+  DISCARD_GROUP = 2**6
+  SLURPY = 2**3
+  UNREACHABLE = 0
+
+
 ###- HELPERS -##############
 
 def _just_of(nodes, *types):
@@ -240,29 +266,29 @@ def _die(state, reason='generic death'):
   raise _DeathError(state, reason)
 
 
-def _sign(pattern):
-  """A signature of a pattern is a unique number, which, as a general rule,
-     increases with the conciseness of the pattern: the more concise one
-     is, the larger its signature."""
-  # XXX signatures of different kinds still overlap?
+def _prioritize(pattern):
+  """The essence of this function is to give a pattern a priority. It is rather
+     dumb to use it out of context; but when defining a function, it may be
+     quite useful."""
+  # Where `sum` is used, a *complex* priority is being made.
   if type(pattern) is list:
-    return sum((_sign(item) for item in pattern))
+    return sum((_prioritize(item) for item in pattern))
   elif pattern.type == 'P_Compare':
-    return 2**24
+    return RyPriority.COMPARE
   elif pattern.type == 'P_Guard':
-    return 2**21
+    return RyPriority.GUARD
   elif pattern.type == 'P_Extract':
-    return sum(map(_sign, pattern.fields), 2**18) * (len(pattern.fields) + 1)
+    return sum(map(_prioritize, pattern.fields), RyPriority.EXTRACT) * (len(pattern.fields) + 1)
   elif pattern.type == 'P_Unpack':
-    return sum(map(_sign, pattern.members), 2**15) * (len(pattern.members) + 1)
+    return sum(map(_prioritize, pattern.members), RyPriority.UNPACK) * (len(pattern.members) + 1)
   elif pattern.type in ('P_Identifier', 'P_Discard'):
-    return 2**12
+    return RyPriority.IDENTIFIER
   elif pattern.type in ('P_NamedMulti', 'P_NamedMany'):
-    return 2**9
+    return RyPriority.NAMED_GROUP
   elif pattern.type in ('P_DiscardMulti', 'P_DiscardMany'):
-    return 2**6
+    return RyPriority.DISCARD_GROUP
   else:
-    return 0
+    return RyPriority.UNREACHABLE
 
 
 ###- INTERPRETER -##############
@@ -279,7 +305,7 @@ def _equals(left, right):
       if len(lval) == len(rval):
         return all(_equals(litem, ritem) for litem, ritem in zip(lval, rval))
       return False
-    elif lval == rval:
+    elif lval in ('', []) and rval in ('', []) or lval == rval:
       return True
   return False
 
@@ -293,7 +319,7 @@ def _visit_pattern(S, pattern, value):
     S.env[pattern.name] = value
   elif pattern.type == 'P_Compare':
     comparee = _visit_node(S, pattern.value)
-    if comparee.value != value.value:
+    if not _equals(comparee, value):
       return False, f'expected {comparee}, found {value}'
   elif pattern.type == 'P_Guard':
     S.env[pattern.param] = value
@@ -380,10 +406,8 @@ def _visit_pattern(S, pattern, value):
 ### Visitor ##############
 
 def _visit_node(S, node):
-  """A recursive, hence slow (and limited by Python's recursion limit), but still
-     tail-call-optimizing node interpreter -- the heart of Rydesta. `node` can be
-     either a RyNode or a list or RyNodes; `S` is a pre-initialized state. Do not
-     use directly -- this function requires some environmental conditions."""
+  """A mostly-tail-call-optimizing interpreter for Rydesta. Accepts single node
+     or list (tuple) of nodes."""
   while True:
     if type(node) in (list, tuple):
       try:
@@ -396,7 +420,7 @@ def _visit_node(S, node):
         head = _visit_node(S, node.head)
         node.cases.sort(
           # ValueCases have priority over MatchCases.
-          key=lambda x: 2**32 if x.type == 'ValueCase' else _sign(x.cond),
+          key=lambda x: 2**32 if x.type == 'ValueCase' else _prioritize(x.cond),
           reverse=True)
         for case in node.cases:
           if case.type == 'MatchCase':
@@ -419,9 +443,8 @@ def _visit_node(S, node):
         # TCO: continue looping...
       elif node.type == 'Function':
         function = RyFunction(S,
-          _sign(node.params),
-          node.name, node.params, node.body,
-          node.line if not node.params else node.params[0].line)
+          RyPriority.SLURPY if node.slurpy else _prioritize(node.params),
+          node.name, node.params, node.body)
         variations = S.env.get(node.name, False)
         if node.name.startswith('\'') and function.arity not in (1, 2):
           _die(S,
@@ -464,11 +487,12 @@ def _visit_node(S, node):
           node.properties,
           node.block,
           S.copy())
-        return None
+        return RyNothing()
       elif node.type == 'Ret':
         raise _ReturnException(_visit_node(S, node.value))
       elif node.type == 'ForBlock':
-        return _visit_node(S, node.functions)[-1]
+        _visit_node(S, node.functions[:-1])
+        node = node.functions[-1]
       elif node.type == 'Needs':
         cache = S.env['MODULE-CACHE'].value
         for location in S.env['PATH'].value.split(';'):
@@ -479,7 +503,7 @@ def _visit_node(S, node):
               from .master import Master
               master = Master(path)
               master.kernel()
-              master.load_init()
+              master.boot()
               # Some strange Python-memory-related problem:
               master.state = master.state.copy()
               master.feed(source)
@@ -492,82 +516,97 @@ def _visit_node(S, node):
                 S.env['MODULE-CACHE'].value.add(RyStr(path))
                 name = node.module.split('/')[-1].capitalize()
                 S.env[name] = RyRouteable(node.module, exports)
-            return None
+            return RyNothing()
         _die(S, f'%smodule not found: "{node.module}"' % ('hidden ' if node.hidden else ''))
       elif node.type == 'Assign':
         value = _visit_node(S, node.value)
         status, payload = _visit_pattern(S, node.pattern, value)
         return _die(S, f'match error: {payload}') if not status else value
       elif node.type == 'Call':
-        def arity_is(arity):
-          if len(node.args) != arity:
-            _die(S, f'special-form "{node.callee.name}" receives exactly {arity} argument(s)')
-          return True
+        # Rydesta has a bunch of special-form functions, that is, things that
+        # look like function calls but are not function calls. `unquote`, `quote`,
+        # and type-like functions are their examples.
         if node.callee.type == 'Request':
-          # A bunch of special-form calls (somewhat like LISP's):
-          if node.callee.name == 'unquote' and arity_is(1):
-            quoted = _visit_node(S, node.args[0])
-            if not isinstance(quoted, RyExcerpt):
-              _die(S, f'cannot unquote a non-excerpt value: {quoted}')
-            return _visit_node(quoted.state.copy(), quoted.node)
-          elif node.callee.name == 'quote' and arity_is(1):
-            return RyExcerpt(S, node.args[0])
+          if len(node.args) == 1:
+            if node.callee.name == 'unquote':
+              quoted = _visit_node(S, node.args[0])
+              if not isinstance(quoted, RyExcerpt):
+                _die(S, f'cannot unquote a non-excerpt value: {quoted}')
+              return _visit_node(quoted.state.copy(), quoted.node)
+            elif node.callee.name == 'quote':
+              return RyExcerpt(S, node.args[0])
         callee = _visit_node(S, node.callee)
+        # Type-like functions implement Rydesta's sole type-casting mechanism.
+        #   num "12.34" -> 12
+        #   str 12.34 -> "12.34"
+        #   vec "hello!" -> ["h" "e" "l" "l" "o" "!"]
         if isinstance(callee, RyTypeType):
-          # E.g. num "12.34" would return "12.34" converted to number.
-          # Note that these "functions" are, too, considered special-form.
-          # It's just easier to make it happen here than in the dedicated section.
-          if arity_is(1):
+          if len(node.args) == 1:
             arg = _visit_node(S, node.args)[0]
-            if callee.value in ('num', 'str', 'vec', 'type'):
-              if callee.value == 'num':
-                if isinstance(arg, RyStr): # num "12.34" ==> 12.34
-                  try:
-                    return RyNum(Fraction(arg.value))
-                  except ValueError as error:
-                    _die(S, f'was not able to convert to num: {arg}')
-              elif callee.value == 'str':
-                if isinstance(arg, RyNum): # str 12.34 ==> "12.34"
-                  return RyStr(repr(arg))
-              elif callee.value == 'vec':
-                if isinstance(arg, RyStr): # vec "hello" ==> ["h" "e" "l" "l" "o"]
-                  return RyVec([RyStr(ch) for ch in arg.value])
-              elif callee.value == 'type': # type 12 ==> num
-                return RyTypeType(arg.type)
+            if callee.value == 'num':
+              if isinstance(arg, RyStr): # num "12.34" ==> 12.34
+                try:
+                  return RyNum(Fraction(arg.value))
+                except ValueError as error:
+                  _die(S, f'was not able to convert to num: {arg}')
+            elif callee.value == 'str':
+              if isinstance(arg, RyNum): # str 12.34 ==> "12.34"
+                return RyStr(repr(arg))
+            elif callee.value == 'vec':
+              if isinstance(arg, RyStr): # vec "hello" ==> ["h" "e" "l" "l" "o"]
+                return RyVec([RyStr(ch) for ch in arg.value])
+            elif callee.value == 'type':
+              # A nice way to get an entity's type!
+              return RyTypeType(arg.type)
             _die(S, f'no special-form "{callee.value}" to convert {arg} to {callee})')
         elif isinstance(callee, RyVariations):
+          # Here the "normal" function calls, those to `variations`, are processed.
           if callee.quoting:
+            # Quoting functions excerpt all arguments they received, without evaluation.
             args = [RyExcerpt(S, arg) for arg in node.args]
           else:
             args = _visit_node(S, node.args)
-          for idx, variation in enumerate(callee.variations):
-            if variation.arity == len(args):
-              capsule = variation.state.copy()
-              for argno, (param, arg) in enumerate(zip(variation.params, args)):
-                status, payload = _visit_pattern(capsule, param, arg)
-                if not status:
-                  break
-              # First condition (the `not in` one) is met when there
-              # were no arguments.
-              if 'status' not in vars() or status:
+          # The algorithm works as follows: we iterate through the variations,
+          # which are already sorted by priority, and try to apply the `args`.
+          # + On success we make the variation's capsule and dive into it.
+          # + On failure, which means getting to the last variation and not matching,
+          #   we err and give a briefing on the variations tried.
+          varc = len(callee.variations)
+          for index, variation in enumerate(callee.variations):
+            capsule = variation.state.copy()
+            if variation.priority == RyPriority.SLURPY:
+              status, _ = _visit_pattern(capsule, variation.params[0], RyVec(args))
+              if status:
+                break
+            elif variation.arity == len(args):
+              if variation.arity == 0:
                 status = True
                 break
-            elif idx == len(callee.variations) - 1:
+              for param, arg in zip(variation.params, args):
+                status, _ = _visit_pattern(capsule, param, arg)
+                if not status:
+                  break
+              if status: # All arguments matched.
+                break
+            elif index == varc - 1:
               status = False
-          if not status:
+              break
+            del capsule
+          if not status: # Not one of the variations matched. Dump all available.
             variations = '\n'.join(x.dump() for x in callee.variations)
             _die(S,
-              f'no variation of "{callee.name}" can handle such {len(args)} argument(s): ' \
-              f'{", ".join(map(repr, args))}. Maybe you want one of these:\n{indent(variations, "  ")}')
-          # Do not bother doing anything if the function's body is empty.
+              f'of these variations:\n{indent(variations, " " * 2)}\n' \
+              f'none matched the {len(args)} argument(s) given: {", ".join(map(repr, args))}')
           if not variation.body:
-            return None
-          capsule.reader = S.reader
+            return RyNothing()
+          # Process the top-to-bottom except-last-one body. Catch returns
+          # on the way. Basically, this is the only place they're allowed.
           try:
             _visit_node(capsule, variation.body[:-1])
           except _ReturnException as ret:
             return ret.value
           S = capsule
+          # Ignore the last-line return.
           last = variation.body[-1]
           node = last.value if last.type == 'Ret' else last
           # TCO: continue looping...
@@ -614,11 +653,11 @@ def _visit_node(S, node):
           _die(S, f'"{node.name}" is not defined')
         return value
       elif node.type == 'Expect':
-        # Evaluate the guard; if it's not false, proceed. If it is, die.
+        # Evaluate the guard; die if it's false.
         guard = _visit_node(S, node.guard)
         if isinstance(guard, RyBool) and guard.value == False:
           _die(S, f'expectation false')
-        return None
+        return RyNothing()
       elif node.type == 'Vector':
         return RyVec(_visit_node(S, node.items))
       elif node.type == 'Number':
@@ -637,7 +676,7 @@ def _visit_node(S, node):
             _die(S, f'interpolation: variable "{name}" is not defined')
           text = S.env.get(name)
           return text.value if isinstance(text, RyStr) else repr(text)
-        value = re.sub(r'\$([a-zA-Z][a-zA-Z0-9_\-]*(?<!\-)[!?]?)', _format, node.value)
+        value = re.sub(r'\$([a-zA-Z][a-zA-Z0-9_\-]*(?<!\-)\??)', _format, node.value)
         return RyStr(bytes(value, 'utf-8').decode('unicode-escape'))
       else:
         raise NotImplementedError(f'internal error: .visit: {node}')
@@ -647,13 +686,16 @@ def _visit_node(S, node):
 
 def visit(state):
   try:
-    last = None
-    while True:
-      node = state.reader.next()
-      if not node:
-        break
-      last = _visit_node(state, node)
-    return last
+    try:
+      last = None
+      while True:
+        node = state.reader.next()
+        if not node:
+          break
+        last = _visit_node(state, node)
+      return last
+    except _ReturnException:
+      _die(state, '"ret" outside a function')
   except ReaderError as error:
     raise RyError(error.reason,
       { 'filename': state.filename,

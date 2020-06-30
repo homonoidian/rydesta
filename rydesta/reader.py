@@ -70,7 +70,7 @@ class Reader:
       'keywords': {
         'for', 'expect', 'ret', 'if', 'else', 'case', 'needs',
         'hidden', 'exposed', 'new', 'obj', 'secret', 'umbrella',
-        'quoting', 'naked'
+        'quoting', 'naked', 'slurpy'
       },
       'precedence': {},
       'guard-precedence': 1
@@ -510,10 +510,11 @@ class Reader:
     return RyNode('Assign', line, pattern=pattern, value=value)
 
   def _function(self):
-    # function ::= (QUOTING | NAKED)? ID {pattern} "->" (infix | block)
+    # function ::= SLURPY? QUOTING? NAKED? ID {pattern} "->" (infix | block)
     #   -> Function(name, ~quoting, ~naked, []params, iter body)
     #   / False
     line = self.line
+    slurpy = self._consume('SLURPY')
     quoting = self._consume('QUOTING')
     naked = self._consume('NAKED')
     name = self._consume('ID')
@@ -540,6 +541,7 @@ class Reader:
     return RyNode('Function', line,
       name = name.value,
       params = params,
+      slurpy = slurpy is not False,
       naked = naked is not False,
       quoting = quoting is not False,
       body = [body] if type(body) is not list else body)

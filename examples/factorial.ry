@@ -1,4 +1,12 @@
+; quoting 'times (Number 0) expr ->
+;   unquote expr
+
+; quoting 'times n expr -> {
+;   e = unquote expr
+;   (unquote n - 1) times e
+; }
+
 factorial n -> n * factorial (n - 1)
 factorial 1 -> 1
 
-say (factorial 100)
+say (factorial 10)

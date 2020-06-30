@@ -12,7 +12,7 @@ Latest PyPy works, too.
 + If instead you want to run a script, the command is `python -m rydesta path/to/script.ry`.
 + To evaluate the tests found in `suite/`, type `python -m rydesta suite`.
 + If you want to see the measurements of the *bootstrap time* (time it took to
-  initialize the kernel and to include/evaluate `basis/init.ry`) and the *evaluation time*
+  initialize the kernel and to include/evaluate `basis/boot.ry`) and the *evaluation time*
   (time it took to evaluate a line of code (REPL), or a whole script), pass flag
   `-t` (or `--time`).
 
